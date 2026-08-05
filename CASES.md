@@ -279,6 +279,18 @@ uncommitted, never-committed variant of `plugin.json` that happened to be valid.
 The running bytes therefore had no Git identity at all, and the cache accumulated
 files from three separate commits plus one untracked file.
 
+**The fix already existed, and was thrown away.** A session note from the release
+two and a half months earlier records exactly this change — array form, `hooks`
+key removed — sitting in the working tree, reverted with `git checkout` as *"risk
+unknown (could break hook loading), out of scope"*. That discarded edit is the
+variant the cache had captured. **The only version of the manifest that worked was
+the one deliberately discarded as too risky to keep**, and reverting it is what
+made the published package unloadable while the machine kept running fine.
+
+The reasoning was locally sound: an unverified change to plugin loading, late in a
+release, out of the round's scope. What was missing was the cheap check that would
+have settled it in seconds — the official validator, which was never run.
+
 **Why nothing caught it.** The successor release added ~4400 lines of tests, an
 8-check release contract, and a 3-OS CI matrix. None of them ever invoked
 `claude plugin validate`, and none asked whether the package could be installed.
@@ -619,6 +631,15 @@ grounding 核对两端真实存储,并**读了脚本源码**(没猜):拷贝循�
 而这种源同步的是**工作目录**,不是 git tree。建缓存时,工作区里恰好有一份未提交、且
 此后从未提交过的 `plugin.json`,而那一份是合法的。于是**真正在运行的字节没有任何 git
 身份**,缓存里还层积了来自三个不同提交的文件,外加一个未跟踪文件。
+
+**修复曾经存在,而且被主动丢掉了。** 两个半月前那次发布的会话记录里,原样记着这个改动
+——数组形式、删掉 `hooks` 键——当时它躺在工作区里,被以*"风险未知(可能破坏 hook 加载)、
+超出本轮范围"*为由 `git checkout` 撤销。**被丢弃的正是缓存捕获的那一份。** 换句话说:
+**manifest 唯一能用的版本,恰恰是被当作"太冒险而不予保留"的那一版**;撤销它,才使已发布
+的包无法加载,而本机依旧运行如常。
+
+当时的判断在局部是成立的:临近发布、超出本轮范围、一个未经验证的加载相关改动。缺的只是
+那个几秒钟就能定论的廉价检查——**官方校验器,从来没被跑过**。
 
 **为什么没人发现。** 后继版本加了约 4400 行测试、8 项发布契约检查、3 操作系统的 CI
 矩阵。**没有任何一项调用过 `claude plugin validate`**,也没有任何一项问过"这个包能被
