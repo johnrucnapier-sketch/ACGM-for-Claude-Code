@@ -61,8 +61,13 @@ from the command text at all.
 exist in this session, before the operation. Resolve identifiers by looking, not
 by asserting.
 
-A complete gate is evidence, not authorization. It still goes to the human, and
-the post-action obligation is still open.
+An incomplete gate is **denied**, not merely questioned. A hook that only asks is
+routed through the session's permission mode, and where that mode auto-accepts,
+asking is a no-op — observed 2026-08-05, when this gate returned `ask` against a
+real destructive command and the command ran anyway. Supplying the four fields
+lifts the block; it does not authorize the operation. A complete gate is evidence,
+the human still decides through the normal flow, and the post-action obligation
+is still open.
 
 ## After the operation
 
@@ -127,7 +132,10 @@ subshell 把它和其他工作绑在一起,也不得用命令替换计算它的�
 **3 · EVIDENCE** —— 本 Session 内、在该操作之前,必须已经存在一次确立目标的只读工具
 调用。标识符靠看,不靠断言。
 
-四项齐全只是证据,不是授权。它仍然要交给人拍板,后验义务仍然欠着。
+四项不全的门是**拒绝**,不是"问一句"。只会 `ask` 的 hook 要经过会话的权限模式,而在自动
+接受的模式下,问等于没问 —— 2026-08-05 实测:本门对一条真实破坏性命令返回了 `ask`,命令
+照样执行了。补齐四个字段**解除阻断,但不构成授权**。四项齐全只是证据,人仍然通过正常流程
+拍板,后验义务也仍然欠着。
 
 ## 操作之后
 

@@ -2,6 +2,23 @@
 
 Plugin id: `agent-coding-governance-methodology@agent-coding-governance-methodology`.
 
+## [0.4.1] — 2026-08-05
+
+### Fixed
+
+- **The gate denies instead of asking.** v0.4.0 returned `permissionDecision:
+  "ask"` for an incomplete gate. Against a real destructive command the hook
+  fired — the transcript records it against that exact `toolUseID` — and the
+  command ran anyway, with no prompt: an `ask` is routed through the session's
+  permission mode, and an auto-accepting mode turns it into a no-op. An
+  incomplete gate now returns `deny`; supplying the four fields lifts the block,
+  and a complete gate emits no decision so the human is reached through the
+  normal flow. See EVIDENCE E-023.
+
+  The version is bumped rather than patched in place because Claude Code keys its
+  plugin cache on the version string — reusing it would leave an installed copy
+  on the old code. That lesson comes from the 0.3.0-rc notes, and it was right.
+
 ## [0.4.0] — 2026-08-05
 
 Rebuilt from the v0.1 skeleton. The 0.3.0-rc line is not an ancestor of this

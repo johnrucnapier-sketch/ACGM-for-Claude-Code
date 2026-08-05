@@ -89,8 +89,14 @@ class GateTests(unittest.TestCase):
         self.assertEqual(out, {}, f"expected silent pass, got {out}")
 
     def assertAsks(self, out: dict, contains: str) -> str:
+        """The gate must DENY, not ask.
+
+        Observed 2026-08-05: an "ask" against a real destructive command was
+        auto-approved by the session's permission mode and the command ran. An
+        incomplete gate cannot depend on the operator's current mode to hold.
+        """
         block = out.get("hookSpecificOutput", {})
-        self.assertEqual(block.get("permissionDecision"), "ask", out)
+        self.assertEqual(block.get("permissionDecision"), "deny", out)
         reason = block.get("permissionDecisionReason", "")
         self.assertIn(contains, reason)
         return reason
@@ -107,7 +113,8 @@ class GateTests(unittest.TestCase):
             calls=[("Bash", "ls -la /tmp/acgm-scratch")],
         )
         # Complete gate: the four fields are present, the command stands alone,
-        # evidence exists. It must NOT auto-allow -- it passes to the human.
+        # evidence exists. It must emit no decision at all -- never "allow" --
+        # so the harness's normal permission flow reaches the human.
         self.assertPasses(out)
 
     # -- FIELDS ----------------------------------------------------------

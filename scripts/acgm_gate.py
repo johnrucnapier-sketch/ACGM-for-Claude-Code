@@ -311,18 +311,31 @@ def main() -> None:
             )
 
     if not problems:
+        # Complete gate: hand back to the harness's normal permission flow, where
+        # the human decides. Never "allow" -- evidence is not authorization.
         emit(None)
 
+    # "deny", not "ask". Observed 2026-08-05: this gate returned "ask" against a
+    # real destructive command, the transcript shows the hook fired, and the
+    # command ran anyway -- the session's permission mode auto-approved it. An
+    # "ask" is a request routed through the permission mode; where that mode
+    # auto-accepts, it is a no-op. An incomplete gate must not depend on the
+    # operator's current mode to hold.
+    #
+    # Denying does not remove human authority, it relocates it: the block is
+    # lifted by producing the evidence, and the completed gate then goes to the
+    # human through the normal flow.
     emit(
-        "ask",
-        "ACGM gate — destructive operation held.\n\n"
+        "deny",
+        "ACGM gate — destructive operation blocked.\n\n"
         + "\n\n".join(f"  {index}. {problem}" for index, problem in enumerate(problems, 1))
         + "\n\nBefore retrying, state these four fields immediately above the call:\n\n"
         "    ACGM-EVIDENCE:      primary source establishing each target identifier\n"
         "    ACGM-CURRENT-STATE: the target's state, read in this session\n"
         "    ACGM-VERIFY-AFTER:  the specific post-action check and its success signal\n"
         "    ACGM-ROLLBACK:      recovery if the target or the result is wrong\n\n"
-        "A complete gate is evidence, not authorization: the human still decides.",
+        "Supplying the four fields lifts this block; it does not authorize the\n"
+        "operation. The completed gate then goes to the human as usual.",
     )
 
 

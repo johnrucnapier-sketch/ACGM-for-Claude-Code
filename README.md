@@ -134,8 +134,10 @@ adapt them to your own setup.
   real content, the operation isolated in its own tool call (no `;`, `&&`, pipe,
   or computed target), and a read-only call already present in the session. All
   three are decided from the tool call and the transcript, so none can be
-  produced by writing text. A complete gate still asks the human — evidence is
-  never authorization.
+  produced by writing text. An incomplete gate is **denied**: a hook that only
+  asks is routed through the session's permission mode, and an auto-accepting
+  mode turns asking into a no-op. Supplying the fields lifts the block; the human
+  still decides through the normal flow. Evidence is never authorization.
 - **`sh scripts/acgm-doctor.sh` tells you what is actually wired**, and refuses to
   claim what it cannot prove: it reports runtime activation as *not provable from
   here*, because doctor is a subprocess and cannot observe the session that ran it.
@@ -374,8 +376,9 @@ Claude Code;Codex 只做过轻量短任务,没有大型多会话项目,因此**�
   不自动点火。
 - **门判结构,不判措辞。** 它要求:四个具名字段且有真实内容;操作独占一次工具调用
   (不得有 `;`、`&&`、pipe 或被计算出的目标);本会话内此前已有只读调用。三条都从
-  工具调用和 transcript 判定,**都不能靠写文字生产出来**。四项齐全仍然交给人拍板
-  ——证据永远不是授权。
+  工具调用和 transcript 判定,**都不能靠写文字生产出来**。四项不全的门是**拒绝**:
+  只会 `ask` 的 hook 要经过会话的权限模式,而自动接受的模式会让「问」变成空操作。
+  补齐字段解除阻断,人仍通过正常流程拍板——证据永远不是授权。
 - **`sh scripts/acgm-doctor.sh` 告诉你到底接上了什么**,并且拒绝宣称它证明不了的东西:
   它把"运行时激活"报为**子进程无法证明**,因为 doctor 观察不到调用它的那个会话。
 - 通用脚手架只写静态文件,不是运行时。
