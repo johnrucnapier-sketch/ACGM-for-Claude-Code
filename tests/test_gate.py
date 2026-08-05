@@ -216,6 +216,25 @@ class GateTests(unittest.TestCase):
         out = self.run_gate("claude plugin uninstall some-plugin@some-marketplace")
         self.assertAsks(out, "FIELDS")
 
+    def test_read_only_marketplace_subcommands_are_not_gated(self) -> None:
+        """Observed 2026-08-05: `marketplace --help` was blocked.
+
+        The whole noun was on the whitelist. The fix narrows the pattern to the
+        mutating subcommands rather than exempting read-only ones — a substring
+        exemption would let `uninstall x && list` through on the `list`.
+        """
+        for command in ("claude plugin marketplace list", "claude plugin marketplace --help"):
+            with self.subTest(command=command):
+                self.assertPasses(self.run_gate(command))
+
+    def test_mutating_marketplace_subcommands_are_gated(self) -> None:
+        for command in (
+            "claude plugin marketplace add /some/path",
+            "claude plugin marketplace remove some-name",
+        ):
+            with self.subTest(command=command):
+                self.assertAsks(self.run_gate(command), "FIELDS")
+
     def test_global_npm_install_is_gated(self) -> None:
         self.assertAsks(self.run_gate("npm i -g @anthropic-ai/claude-code"), "FIELDS")
 

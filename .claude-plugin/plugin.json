@@ -1,6 +1,6 @@
 {
   "name": "agent-coding-governance-methodology",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Drift control for long-horizon Claude Code development: a structural gate for destructive operations, evidence-first grounding, and a self-check that refuses to claim more than it can prove. 长周期 Claude Code 开发漂移控制：破坏性操作的结构门、证据优先的 grounding、以及一个绝不宣称超出自己能证明范围的自检。",
   "author": {
     "name": "johnrucnapier-sketch"

@@ -2,6 +2,25 @@
 
 Plugin id: `agent-coding-governance-methodology@agent-coding-governance-methodology`.
 
+## [0.5.1] — 2026-08-05
+
+### Fixed
+
+- **Marketplace inspection is not marketplace mutation.** The whitelist matched
+  the bare noun `claude plugin marketplace`, so `marketplace list` — and even
+  `marketplace --help` — were gated. The patterns now name the mutating
+  subcommands (`add`, `remove`, `update`, `refresh`).
+
+  Deliberately not fixed by exempting read-only subcommands: the filter matches
+  substrings, so an exemption for `list` would have let
+  `claude plugin uninstall x && claude plugin list` through on the `list`.
+  Narrowing the positive pattern has no such hole.
+
+  Third false positive of the same family in one day — `2>/dev/null`, then
+  `--help`, then this. All three share a cause: matching a fragment of an
+  invocation instead of the operation it performs. Precision debt is only
+  visible once a gate denies (EVIDENCE E-024).
+
 ## [0.5.0] — 2026-08-05
 
 ### Added

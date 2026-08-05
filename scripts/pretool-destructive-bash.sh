@@ -88,7 +88,14 @@ case "$scan" in
   *"git rebase"*|*"git filter-branch"*|*"git filter-repo"*|*"git stash drop"*|*"git stash clear"*) is_destructive=1 ;;
   # agent / plugin / package state  (MISSING IN v0.1 — see header)
   *"claude plugin uninstall"*|*"claude plugin install"*|*"claude plugin update"*) is_destructive=1 ;;
-  *"claude plugin enable"*|*"claude plugin disable"*|*"claude plugin marketplace"*) is_destructive=1 ;;
+  *"claude plugin enable"*|*"claude plugin disable"*) is_destructive=1 ;;
+  # Marketplace: name the mutating subcommands rather than the whole noun.
+  # Matching bare "claude plugin marketplace" gated `marketplace list` and even
+  # `marketplace --help` (observed 2026-08-05). The fix is a narrower pattern,
+  # NOT a read-only exemption: an exemption matched by substring would let
+  # `claude plugin uninstall x && claude plugin list` through on the "list".
+  *"claude plugin marketplace add"*|*"claude plugin marketplace remove"*) is_destructive=1 ;;
+  *"claude plugin marketplace update"*|*"claude plugin marketplace refresh"*) is_destructive=1 ;;
   *"npm i -g"*|*"npm install -g"*|*"npm uninstall -g"*|*"npm rm -g"*) is_destructive=1 ;;
   *"pip install"*|*"pip uninstall"*|*"brew install"*|*"brew uninstall"*|*"brew upgrade"*) is_destructive=1 ;;
   # agent-owned configuration
