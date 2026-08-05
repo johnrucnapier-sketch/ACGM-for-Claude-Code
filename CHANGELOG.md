@@ -4,6 +4,47 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.7.0] — 2026-08-05
+
+### Added
+
+- **CASES.md Case 14** — the first case from the project the methodology was built
+  for, rather than from the plugin repairing itself. Around ten parallel work
+  streams, catastrophic cross-stream drift, cleared by a few audit rounds; and then
+  months in which the layer rarely produced anything resembling a rescue, because
+  problems now die during the check-current-state step.
+- **METHODOLOGY meta-observation: governance return is front-loaded, then
+  invisible.** First it clears existing rot — dramatic and countable. Then it
+  prevents new rot, where success looks like nothing happening. Counting saves
+  measures the second phase at zero, so **a falling intervention count is the
+  expected signature of success and is worthless as evidence in either direction
+  without its denominator** — and equally, quietness cannot be used to argue the
+  mechanism is alive.
+- EVIDENCE **E-026** (the above, with the owner's untestable counterfactual marked
+  as exactly that) and **E-027** (below).
+
+### Fixed
+
+- **`acgm_activity` counted allowed operations as misses.** A complete gate emits
+  `{}` and leaves no fingerprint, so every legitimately permitted call looked
+  ungated — 3 of 15 in a real project. Presence of ACGM's own PreToolUse record now
+  settles whether the gate ran, whatever the record says.
+- **GAPS is now labelled a candidate list, not a verdict.** Even after the fix, an
+  allowed gate does not always leave a record. The one call still flagged in that
+  project was checked by hand and had been denied, re-evidenced, and correctly
+  allowed on retry. Reporting it as a miss would have been the overclaiming this
+  project exists to prevent.
+
+### Known defect (recorded, not fixed)
+
+- **The gate's field check depends on a race** between the transcript flush and hook
+  execution. Two calls of identical shape — fields written in the same assistant
+  turn as the command — one passed, one was denied for missing fields. The visible
+  direction is a false denial and is safe; the invisible direction reads a stale
+  turn and surfaces an older turn's fields, which is E-025's false pass. **BINDING
+  is currently the only thing standing between that race and an unauthorised
+  operation.** Reading the fields from the transcript at all is the root cause.
+
 ## [0.6.1] — 2026-08-05
 
 ### Fixed

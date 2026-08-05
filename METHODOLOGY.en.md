@@ -40,6 +40,17 @@ ACGM **does not assume any specific auditor.** It only commits to making violati
 **visible, traceable, and recorded**. The mechanism layer is partial implementation;
 the audit layer closes the gap. Both are execution means and do not move the norm.
 
+> **Meta-observation: governance return is front-loaded, then invisible** (since
+> v0.5, from CASES.md Case 14). Governance has two phases: it first clears
+> accumulated rot — dramatic, countable, obvious — and then prevents new rot, where
+> **success looks like nothing happening**. Counting saves measures the second phase
+> at exactly zero. The reporting rule that follows: **a falling intervention count is
+> the expected signature of success, and is therefore worthless as evidence in either
+> direction on its own.** It must be reported alongside how many chances the
+> mechanism actually had. A mechanism that stopped being dramatic has not stopped
+> mattering — but neither can its quietness be used to argue it is still alive.
+> Quiet and not-installed are indistinguishable without a denominator.
+>
 > **Design constraint on the mechanism layer** (since v0.4, from CASES.md Case 12):
 > a mechanism checks only what it can decide from the tool call and the transcript.
 > Checking what the agent *writes* measures compliance theatre — v0.1's gate

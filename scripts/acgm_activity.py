@@ -18,9 +18,15 @@ wrong mechanism twice in a row:
   * An absence is reported with its denominator. "The gate never fired" and "the
     gate is not installed" look identical until you know how many chances it had.
 
-The strongest signal here is neither of those counts. It is the GAP: a Bash call
-that matches the destructive filter and has no gate output against its tool-use
-id. That means the gate was missing, disabled, or failing at that moment.
+The signal worth acting on is neither of those counts. It is the GAP: a Bash call
+that matches the destructive filter and has no gate record against its tool-use id.
+
+A gap is a CANDIDATE, not a verdict. An allowed gate emits `{}` and does not always
+leave an attachment behind, so a call listed as a gap may in fact have been gated
+and permitted. Confirmed once against a real project on 2026-08-05: the single call
+flagged there had been denied, re-evidenced, and correctly allowed on retry. Every
+gap needs checking against the transcript before it means anything — reporting it as
+proof of a miss would be the same overclaiming this project exists to prevent.
 
 Usage:
     acgm_activity.py                     # every project
@@ -45,6 +51,9 @@ PROJECTS = os.path.expanduser("~/.claude/projects")
 # a silently shortened list reads as "that was all of them".
 SHOW_GAPS = 5
 
+# Identifies ACGM's own PreToolUse hook among any others a session may have.
+GATE_HOOK = "pretool-destructive-bash"
+
 # Hook output fingerprints. Each is text ACGM emits and ordinary prose does not,
 # so a match identifies both the mechanism and the version that produced it.
 FINGERPRINTS = [
@@ -63,6 +72,7 @@ LABELS = {
     "session_start_governed": "SessionStart · governed project",
     "session_start_ungoverned": "SessionStart · no governance docs",
     "gate_blocked": "PreToolUse · blocked",
+    "gate_allowed": "PreToolUse · ran, gate complete, allowed",
     "gate_asked": "PreToolUse · asked (weaker: an auto-accepting mode ignores it)",
     "posttool_advisory": "PostToolUse · advisory",
     "posttool_marker": "PostToolUse · edited the file (v0.1 behaviour)",
@@ -192,6 +202,22 @@ def read_session(path: str) -> dict:
             attachment = entry.get("attachment")
             if not isinstance(attachment, dict) or not attachment.get("hookEvent"):
                 continue
+
+            # A COMPLETE gate emits {} and leaves no fingerprint. Counting only
+            # fingerprints made every legitimately-allowed operation look like a
+            # miss: in one real project 3 of 15 gated calls were reported as gaps
+            # when the gate had in fact run and allowed them (2026-08-05). The
+            # question a gap answers is "did the gate run", so the presence of its
+            # own hook record settles it, whatever the record says.
+            if attachment.get("hookEvent") == "PreToolUse" and GATE_HOOK in (
+                attachment.get("command") or ""
+            ):
+                uid = attachment.get("toolUseID", "")
+                if uid:
+                    gated.add(uid)
+                    if (attachment.get("stdout") or "").strip() == "{}":
+                        events["gate_allowed"] = events.get("gate_allowed", 0) + 1
+
             stdout = attachment.get("stdout") or ""
             if not stdout:
                 continue
@@ -277,11 +303,14 @@ def render(sessions: list[dict]) -> int:
             print(f"  {'':<18}  ... and {hidden} more (use --json for the full list)")
         print()
 
-    print("  ACTIVE            hooks ran, and every destructive call was gated")
+    print("  ACTIVE            hooks ran, and every destructive call has a gate record")
     print("  ACTIVE (untested) hooks ran, but nothing destructive was attempted —")
     print("                    the gate had no occasion to fire, which is not a failure")
     print("  INACTIVE          commands ran and ACGM produced no output at all")
-    print("  GAPS              a destructive call has no gate output against its id\n")
+    print("  GAPS              a destructive call has no gate record against its id.")
+    print("                    CANDIDATES, NOT A VERDICT: an allowed gate does not always")
+    print("                    leave one, so a listed call may have been gated correctly.")
+    print("                    Confirm each against the transcript before concluding.\n")
 
     if gaps_total:
         print(f"  {gaps_total} ungated destructive call(s). Investigate before trusting the gate.")

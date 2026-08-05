@@ -38,6 +38,7 @@ note on rates.
 | 11 | Two gates, one command, credit given to the wrong one | ② | raw hook stdout in the transcript |
 | 12 | A gate satisfied by four characters, while the real irreversible op passed | ① | reading the gate's own source |
 | 13 | Three versions installed, running from a deleted binary | ② | `CLAUDE_CODE_EXECPATH` vs. disk |
+| 14 | ~10 parallel work streams, drift cleared, then nothing dramatic ever again | ② at scale | project-internal audit rounds |
 
 ---
 
@@ -405,6 +406,53 @@ evidence, or it is configuration wearing a runtime's clothes.
 
 ---
 
+### Case 14 — The rescue happens once; after that, success looks like nothing (② at scale)
+
+**Situation.** May 2026, on a long-horizon application that later shipped. Around
+ten parallel work streams were running against the same project. Information
+error between them had become, in the owner's words, catastrophic: sessions
+inheriting each other's stale conclusions, decisions overturned in one stream and
+still live in another, no shared notion of which statement was current.
+
+This is the condition the four drift types describe, all at once and compounding.
+
+**What happened after the governance layer went in.** A few rounds of
+project-internal audit — not new features, just reading current sources against
+what the documents claimed — resolved the accumulated worktree confusion, the
+drift, and the rot. The effect at that point was dramatic and easy to see.
+
+**And then it stopped being dramatic.** In the months since, the layer has rarely
+produced anything that felt like a rescue. Not because it stopped working — because
+most problems now die in the first round, during the check-the-real-state step,
+before they become anything worth naming. The owner's own summary: *there is not
+much of that "it saved the project" feeling any more; but without it, the project
+could not have been pushed this far.*
+
+**What this case is actually about.** Governance return is **front-loaded, then
+invisible**:
+
+| Phase | What it does | What it looks like |
+|---|---|---|
+| First | clears accumulated rot | dramatic, countable, obvious |
+| After | prevents new rot | **nothing happens** |
+
+Counting saves measures the second phase at exactly zero. A tool that stops being
+dramatic is not a tool that stopped mattering — it is what a working preventive
+mechanism is supposed to look like.
+
+**Reporting consequence.** A falling intervention count is the expected signature
+of success, and is therefore worthless as evidence in either direction on its own.
+It must be reported with its denominator — how many chances the mechanism had —
+which is why `acgm_activity.py` separates `ACTIVE` from `ACTIVE (untested)` and
+treats the second as a normal, healthy state rather than a warning.
+
+**Limit, stated deliberately.** "Without it the project could not have been pushed
+this far" is the owner's assessment of a **counterfactual that cannot be tested**.
+It is recorded here as their judgment, and it is not treated as a validated claim
+anywhere in this repository (EVIDENCE E-026).
+
+---
+
 ## How it adds up
 
 | Case | Trigger | Key action |
@@ -473,6 +521,7 @@ schema 提示、路径均已**移除**——只留漂移机制。通用、公开
 | 11 | 两道门拦同一条命令,功劳记错了对象 | ② | transcript 里的原始 hook stdout |
 | 12 | 四个字符就能过的门,真正不可逆的操作却溜了 | ① | 读门自己的源码 |
 | 13 | 装着三个版本,跑的是已被删除的二进制 | ② | `CLAUDE_CODE_EXECPATH` 对照磁盘 |
+| 14 | 十来条并行工作流,漂移被清理,此后再没有过戏剧性拯救 | ② 规模化 | 项目内审计轮次 |
 
 ---
 
@@ -726,6 +775,43 @@ transcript 判定,所以**都不能靠写文字生产出来**。白名单扩到�
 **一般化。** 这是四状态分离最纯粹的形态。**源已验证、配置已验证、运行时已激活,在同一
 时刻是三个不同的答案**——而运行时那个答案在磁盘上根本没有可对照的身份。任何"我们正在运行
 版本 X"的说法,要么拿得出运行时自身的证据,要么它只是穿着运行时外衣的配置。
+
+---
+
+### 案例 14 —— 拯救只发生一次,此后成功的样子就是什么都没发生(② 规模化)
+
+**情境。** 2026 年 5 月,一个后来上线的长周期应用。**大约十条并行工作流**同时跑在同一个
+项目上。它们之间的信息误差,用所有者的话说,已经是**灾难性的**:session 互相继承对方
+的陈旧结论、一条流里已经推翻的决定在另一条流里仍然生效、**没有任何共识来判断哪句话是
+当前的**。
+
+这正是四类漂移同时发生、并且互相放大的状态。
+
+**治理层装上之后发生了什么。** 几轮**项目内审计**——不做新功能,只是拿当前真值源去对
+文档里的说法——把积压的工作树混乱、漂移和腐化清理掉了。**那个阶段的效果剧烈且一眼可见。**
+
+**然后它就不再剧烈了。** 此后数月,这一层很少再产生什么"像是拯救"的时刻。不是因为它
+不работает了,而是因为**绝大多数问题现在死在第一轮**——死在"核对真实状态"那一步,还没
+长成值得起名字的东西。所有者自己的总结:*之后不太有那种"拯救了项目"的感觉;但如果没有
+这个东西,这个项目没法推进到这个程度。*
+
+**这个案例真正在讲的事。** 治理的回报是**前置的,然后隐形**:
+
+| 阶段 | 它在做什么 | 看起来是什么样 |
+|---|---|---|
+| 第一阶段 | 清理存量腐化 | 剧烈、可数、明显 |
+| 之后 | 阻止增量腐化 | **什么都没发生** |
+
+用"救了几次"去衡量,第二阶段的读数**恒为零**。**一个不再惊心动魄的工具,不等于一个不再
+重要的工具**——那恰恰是一个有效的预防机制该有的样子。
+
+**由此得到的报告纪律。** 干预次数下降是成功的预期特征,因此**它单独作为证据,朝任何方向
+都是无效的**。它必须带分母报告——机制到底有过多少次机会——这正是 `acgm_activity.py` 把
+`ACTIVE` 和 `ACTIVE (untested)` 分开、并把后者视为**正常健康状态而非警告**的原因。
+
+**边界,刻意写明。** "没有它这个项目推进不到这个程度"是所有者对一个**无法被检验的反事实**
+的判断。这里如实记录为他的判断,**本仓库任何地方都不把它当作已验证的主张**(EVIDENCE
+E-026)。
 
 ---
 
