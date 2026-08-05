@@ -33,12 +33,22 @@ substitutive:
 | Layer | Carries | Example |
 |---|---|---|
 | **Normative (ACGM proper)** | Declares the should | "Before any destructive op, report the real current state" |
-| **Mechanism** (hooks / drift-check) | The mechanically enforceable subset | PreToolUse forces a structured gate; drift-check static scan |
+| **Mechanism** (hooks / drift-check) | The mechanically enforceable subset | PreToolUse decides destructive ops **structurally**; drift-check static scan |
 | **Audit** (humans / agent self-check / external agents / future agents reviewing the record) | Closes gaps the mechanism cannot cover | A human noticing that a long-running task has crashed hours later |
 
 ACGM **does not assume any specific auditor.** It only commits to making violations
 **visible, traceable, and recorded**. The mechanism layer is partial implementation;
 the audit layer closes the gap. Both are execution means and do not move the norm.
+
+> **Design constraint on the mechanism layer** (since v0.4, from CASES.md Case 12):
+> a mechanism checks only what it can decide from the tool call and the transcript.
+> Checking what the agent *writes* measures compliance theatre — v0.1's gate
+> grepped for the literal markers `(a)`–`(d)` and four characters satisfied it.
+> Any check that can be met by composing a sentence is a ritual, not a mechanism.
+> Correspondingly, where detection must stay coarse — deciding whether a sentence
+> is a normative rule or a factual claim, for instance — **make the response
+> cheaper rather than the detector cleverer**: a coarse detector with a dismissible
+> advisory beats a clever one that silently rewrites a file.
 
 > **Audit reliability gradient (empirical):** human / external agent / future agent
 > are substantially more reliable than **the acting agent's self-check**.

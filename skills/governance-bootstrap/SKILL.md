@@ -12,6 +12,12 @@ description: Use when setting up this governance system from zero in a project t
 
 Build from minimum-viable to complete, in order:
 
+−1. **Prove the mechanism runs before governing anything with it.** Run
+   `acgm doctor` and confirm that hooks fired *in this session* — not that a
+   plugin record exists. An install record, a cache directory and a `--version`
+   string are all configuration; only observed hook output is activation. A
+   governance system nobody can verify is running is worse than none, because it
+   is trusted. Everything below assumes this step passed.
 0. **Audit first (read-only, no code).** One audit-only session: read existing rules
    files + history/handoffs, compare against current code. Output 3 lists — ① still
    valid ② outdated, delete ③ contradictory, needs human ruling. This is the input
@@ -47,6 +53,10 @@ Build from minimum-viable to complete, in order:
 
 按从最小可用到完整的顺序:
 
+−1. **先证明机制自己在运行,再用它治理别人。** 运行 `acgm doctor`,确认 hooks **在本
+   Session 内**真的触发过 —— 而不是"存在一条安装记录"。安装记录、缓存目录、
+   `--version` 输出全都只是配置;只有观察到的 hook 输出才是激活。**一套没人能验证它
+   在运行的治理系统,比没有更糟,因为它被信任。** 以下所有步骤都以本步通过为前提。
 0. **先审计(只读,不写代码)。** 一个只做审计的 session:通读现有规则文件+历史交接,
    对照当前代码。输出三份清单——① 还成立 ② 已过时该删 ③ 矛盾需人裁定。后续重构的输入。
 1. **建宪法。** 把"还成立"里不变的部分(红线、角色边界、范围边界、四类漂移防线)写进

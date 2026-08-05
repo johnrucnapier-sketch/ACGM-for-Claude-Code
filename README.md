@@ -86,6 +86,14 @@ injects a grounding directive — the agent acknowledges governance and runs the
 5-step grounding (or, if the project has no governance docs yet, points you to
 `governance-bootstrap`) instead of diving straight into edits.
 
+*And check it, don't assume it.* `claude plugin list` showing **enabled** is
+configuration, not activation — a plugin can be registered and still fail to
+load. Run `sh scripts/acgm-doctor.sh` for the configuration side, and treat
+observed hook output in your own session as the only proof of activation. This
+distinction is not pedantic: v0.1 of this plugin was published for three months
+in a state where no clean install could load it, while appearing healthy on the
+author's machine (CASES.md Case 10).
+
 ### Without the plugin (generic scaffold)
 
 If you are not using the Claude Code plugin, a plugin-free scaffolder drops the
@@ -117,9 +125,20 @@ adapt them to your own setup.
 
 ### How "automatic" works (stated honestly)
 
-- **The plugin's SessionStart hook is the only runtime mechanism** — genuinely
-  auto-injected every session. Skills are invoked by the Skill tool; they do not
-  auto-fire.
+- **Four hooks are the runtime mechanism.** `SessionStart` injects grounding every
+  session. `PreToolUse` holds destructive Bash behind a structural gate.
+  `PostToolUse` advises on governance-doc writes and changes nothing.
+  `SessionEnd` reports post-action checks the session is walking away from.
+  Skills are invoked by the Skill tool; they do not auto-fire.
+- **The gate checks structure, not wording.** It requires four named fields with
+  real content, the operation isolated in its own tool call (no `;`, `&&`, pipe,
+  or computed target), and a read-only call already present in the session. All
+  three are decided from the tool call and the transcript, so none can be
+  produced by writing text. A complete gate still asks the human — evidence is
+  never authorization.
+- **`sh scripts/acgm-doctor.sh` tells you what is actually wired**, and refuses to
+  claim what it cannot prove: it reports runtime activation as *not provable from
+  here*, because doctor is a subprocess and cannot observe the session that ran it.
 - The generic scaffold only writes static files; it is not a runtime.
 - Either way, what gets wired is auto-grounding + a constitution skeleton. Full
   governance (decision log / snapshots / tracks) is **human-driven**: invoke
@@ -149,10 +168,17 @@ CASES.md                           ← real, desensitized drift-correction cases
 .claude-plugin/
   plugin.json                      ← this repo IS a Claude Code plugin
   marketplace.json                 ← for /plugin marketplace add install
-hooks/hooks.json                   ← SessionStart + PostToolUse hooks (the automatic layer)
-scripts/grounding-inject.sh        ← the SessionStart hook injects a thin grounding directive → skills
+hooks/hooks.json                   ← SessionStart + PreToolUse + PostToolUse + SessionEnd (the automatic layer)
+scripts/grounding-inject.sh        ← SessionStart: injects a thin grounding directive → skills
+scripts/pretool-destructive-bash.sh ← PreToolUse: cheap destructive-command filter
+scripts/acgm_gate.py               ← the structural gate itself, and the SessionEnd obligation report
+scripts/post-tool-truth-first.sh   ← PostToolUse: advisory on governance-doc writes; edits nothing
+scripts/sessionend-obligations.sh  ← SessionEnd: unverified post-action promises
+scripts/acgm-doctor.sh             ← health check; reports activation as not provable from a subprocess
 scripts/governance-init.sh         ← plugin-free generic scaffold: writes CONSTITUTION/AGENTS/CLAUDE pointer
 scripts/drift-check.sh             ← static drift scanner (run manually or in CI)
+tests/                             ← contract + behaviour tests, hermetic (run with CLAUDECODE set and unset)
+CHANGELOG.md / EVIDENCE.md         ← release history; maturity register for every claim
 skills/
   session-grounding/SKILL.md       ← invoke at: session start/resume — 5-step grounding + report first
   truth-first/SKILL.md             ← invoke at: before a technical conclusion / irreversible op — force sources
@@ -311,6 +337,12 @@ marketplace 里装。
 agent 会先确认治理、走 5 步 grounding(或在项目还没治理文档时,引导你调
 `governance-bootstrap`),而不是直接埋头改代码。
 
+*但要去查,不要假设。* `claude plugin list` 显示 **enabled** 是**配置**,不是**激活**
+——插件可以注册成功却加载失败。配置这一侧跑 `sh scripts/acgm-doctor.sh`;激活这一侧,
+**只有你自己会话里观察到的 hook 输出**才算证据。这个区分不是抠字眼:本插件 v0.1 公开
+发布了三个月,期间任何 clean install 都装不上,而它在作者本机上看起来一切正常
+(CASES.md 案例 10)。
+
 ### 不用插件(通用脚手架)
 
 若你不用 Claude Code 插件,有一个无需插件的脚手架,把治理文件铺进任意项目:
@@ -336,8 +368,16 @@ Claude Code;Codex 只做过轻量短任务,没有大型多会话项目,因此**�
 
 ### "自动"是怎么回事(如实)
 
-- **插件的 SessionStart hook 是唯一的运行时机制**——每 session 真·自动注入。skill
-  由 Skill 工具调用,不自动点火。
+- **四个 hook 构成运行时机制。** `SessionStart` 每个会话注入 grounding;`PreToolUse`
+  把破坏性 Bash 挡在一道结构门后;`PostToolUse` 对治理文档的写入给出提醒,**不改动
+  任何文件**;`SessionEnd` 报告本次会话正在丢下的后验核验。skill 由 Skill 工具调用,
+  不自动点火。
+- **门判结构,不判措辞。** 它要求:四个具名字段且有真实内容;操作独占一次工具调用
+  (不得有 `;`、`&&`、pipe 或被计算出的目标);本会话内此前已有只读调用。三条都从
+  工具调用和 transcript 判定,**都不能靠写文字生产出来**。四项齐全仍然交给人拍板
+  ——证据永远不是授权。
+- **`sh scripts/acgm-doctor.sh` 告诉你到底接上了什么**,并且拒绝宣称它证明不了的东西:
+  它把"运行时激活"报为**子进程无法证明**,因为 doctor 观察不到调用它的那个会话。
 - 通用脚手架只写静态文件,不是运行时。
 - 两种方式接好的都是"自动 grounding + 宪法骨架"。完整治理(决策日志/快照/轨道)是
   **人驱动**的:调用 `governance-bootstrap` 或照 `METHODOLOGY.md` §12 手做。
@@ -362,8 +402,15 @@ CASES.md                           ← 真实、脱敏的漂移纠错案例
 .claude-plugin/
   plugin.json                      ← 本仓即一个 Claude Code plugin
   marketplace.json                 ← 供 /plugin marketplace add 安装
-hooks/hooks.json                   ← SessionStart + PostToolUse 钩子(自动层)
-scripts/grounding-inject.sh        ← SessionStart hook 注入薄 grounding 指令,指向 skills
+hooks/hooks.json                   ← SessionStart + PreToolUse + PostToolUse + SessionEnd(自动层)
+scripts/grounding-inject.sh        ← SessionStart:注入薄 grounding 指令,指向 skills
+scripts/pretool-destructive-bash.sh ← PreToolUse:廉价的破坏性命令过滤
+scripts/acgm_gate.py               ← 结构门本体,以及 SessionEnd 的未完成义务报告
+scripts/post-tool-truth-first.sh   ← PostToolUse:治理文档写入提醒,不改任何文件
+scripts/sessionend-obligations.sh  ← SessionEnd:未核验的后验承诺
+scripts/acgm-doctor.sh             ← 健康检查;把"运行时激活"报为子进程无法证明
+tests/                             ← 契约与行为测试,密封(CLAUDECODE 设与不设各跑一次)
+CHANGELOG.md / EVIDENCE.md         ← 发布历史;每条主张的成熟度登记表
 scripts/governance-init.sh         ← 无需插件的通用脚手架:铺 CONSTITUTION/AGENTS/CLAUDE 指针
 scripts/drift-check.sh             ← 静态漂移扫描器(手动或 CI 跑)
 skills/

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Always-green-able gate. Hermetic: no network, no Claude CLI, no auth.
+  # These are the tests that would have caught the v0.1 manifest bug.
+  contract:
+    name: Contract & behaviour — Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Shell syntax
+        run: for f in scripts/*.sh; do sh -n "$f"; done
+
+      - name: Unit and behaviour tests
+        # Hermeticity matters here. RC4's suite read os.environ inside the code
+        # under test and passed only because CI never runs inside Claude Code;
+        # the same suite failed on a developer machine. Running with the
+        # variable both set and unset makes that class of leak fail loudly.
+        run: |
+          python -m unittest discover -s tests -v
+          CLAUDECODE=1 python -m unittest discover -s tests
+
+      - name: Doctor self-check
+        # --plugin-dir keeps this pointed at the checkout rather than any
+        # installed copy. Cache-drift checks are skipped when nothing is
+        # installed, which is the CI case.
+        run: sh scripts/acgm-doctor.sh --plugin-dir "$PWD"
+
+  # The check this project did not have for three months, and the reason v0.1
+  # shipped a plugin nobody could install. It asks the only question that
+  # matters before any governance claim: does Claude Code actually load this?
+  #
+  # First run is itself the experiment. If the CLI turns out to need
+  # credentials for a local-directory marketplace, this job fails visibly and
+  # gets a token — it does not get quietly downgraded to continue-on-error.
+  loadable:
+    name: Claude Code accepts the package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code CLI
+        run: npm i -g @anthropic-ai/claude-code
+
+      - name: Official manifest validation
+        run: claude plugin validate "$PWD"
+
+      - name: Install from this checkout and assert it loads
+        # `validate` passing is NOT loading: a manifest that declares
+        # hooks/hooks.json validates fine and then fails at load time with
+        # "Duplicate hooks file detected". Only the loader settles it.
+        run: |
+          set -euo pipefail
+          cd /tmp
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install agent-coding-governance-methodology@agent-coding-governance-methodology
+          claude plugin list | tee /tmp/plugins.txt
+          grep -q 'failed to load' /tmp/plugins.txt && {
+            echo "::error::plugin registered but failed to load"; exit 1; }
+          grep -q 'enabled' /tmp/plugins.txt || {
+            echo "::error::plugin is not enabled after install"; exit 1; }
+          claude plugin details agent-coding-governance-methodology@agent-coding-governance-methodology

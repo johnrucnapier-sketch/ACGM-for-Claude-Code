@@ -34,6 +34,10 @@ note on rates.
 | 7 | External AI's plan caught before merge | ②+③ (+P0) | pre-merge full-repo scan |
 | 8 | Solo, one worktree, parallel → governance nearly mislanded | ③ | grounding worktree/branch check |
 | 9 | Form-complete + long autonomy + compaction = self-audit miss | ② chain | external human audit |
+| 10 | A published governance plugin that could never load | ③ | official validator, run for the first time |
+| 11 | Two gates, one command, credit given to the wrong one | ② | raw hook stdout in the transcript |
+| 12 | A gate satisfied by four characters, while the real irreversible op passed | ① | reading the gate's own source |
+| 13 | Three versions installed, running from a deleted binary | ② | `CLAUDE_CODE_EXECPATH` vs. disk |
 
 ---
 
@@ -257,6 +261,138 @@ the README cites). Each such moment extends ACGM rather than discredits it.
 
 ---
 
+### Case 10 — A published governance plugin that could never load (③)
+
+**Situation.** ACGM v0.1 was released publicly in May 2026 and used daily on the
+author's machine for months. On 2026-08-05 the official validator was run against
+the repository for the first time.
+
+**The drift.** `plugin.json` declared `"skills": "skills/"` and
+`"hooks": "hooks/hooks.json"`. The loader requires declared paths to start with
+`./`, and `hooks/hooks.json` is loaded automatically, so declaring it fails as a
+duplicate. The published package could not be installed by anyone.
+
+It appeared to work locally for a reason that is worse than the bug. The plugin
+was registered from a **directory-source marketplace**, which syncs the working
+*tree*, not the Git tree. When the cache was built, the working directory held an
+uncommitted, never-committed variant of `plugin.json` that happened to be valid.
+The running bytes therefore had no Git identity at all, and the cache accumulated
+files from three separate commits plus one untracked file.
+
+**Why nothing caught it.** The successor release added ~4400 lines of tests, an
+8-check release contract, and a 3-OS CI matrix. None of them ever invoked
+`claude plugin validate`, and none asked whether the package could be installed.
+It then added a ~3670-line installer to solve reported installation failures. The
+cause was two missing `./` prefixes.
+
+**Correction.** Fix the manifest; add contract tests that encode the loader's
+rules; make "Claude Code accepts the package" a CI job that installs from the
+checkout and asserts `enabled`. Note that `validate` passing is still not loading:
+the duplicate-hooks configuration validates cleanly and is refused at load time.
+
+**Generalization.** A governance mechanism must prove it is installable before it
+makes any claim about governing anything. Test volume is not coverage; 4400 lines
+of tests that never ask the one question that matters are 4400 lines of comfort.
+
+---
+
+### Case 11 — Two gates, one command, credit given to the wrong one (②)
+
+**Situation.** During the same session, a destructive `rm -rf` was held by a
+pre-execution gate. The agent reported that ACGM's own hook had caught it.
+
+**The drift.** Two plugins were installed, each with a PreToolUse gate. The
+message rendered to the user came from the third-party one. The agent attributed
+the interception to ACGM based on the visible text and on its expectation of
+which mechanism was active. Later, correcting itself from the wording mismatch,
+it over-corrected to "it was not ACGM at all" — also wrong.
+
+Only the raw hook output settled it: the transcript contains a `PreToolUse`
+attachment whose stdout carries ACGM's own `permissionDecision: "ask"` against
+that exact `toolUseID`. **Both** gates fired. The agent had been wrong twice, in
+opposite directions, before reading the evidence.
+
+**Why this matters here.** This register already contains a rejected claim of
+exactly this shape: an earlier interception credited to ACGM was found to have
+been held by a third-party gate. The failure mode reproduced, with a different
+agent, in the project that documented it.
+
+**Correction.** Attribution requires the mechanism's own output, keyed by tool
+call — never the message a human happened to see, and never the absence of an
+expected phrasing. Grepping a transcript for a gate's text is not attribution
+either: the counts were contaminated by the agent having `cat`-ed the hook script
+into the same transcript minutes earlier.
+
+**Generalization.** In an environment with more than one guardrail, "what stopped
+this?" is an evidence question. An intervention you cannot key to a mechanism is
+not a win you may claim.
+
+---
+
+### Case 12 — A gate satisfied by four characters, while the real irreversible op passed (①)
+
+**Situation.** Reading the v0.1 PreToolUse gate's source, in the same session in
+which it had fired.
+
+**The drift — three defects in the mechanism itself.**
+
+1. *Text where structure was needed.* The gate grepped the agent's previous reply
+   for the literal markers `(a)`–`(d)`. Four characters satisfied it. Form
+   compliance was, mechanically, the pass condition — the exact behaviour the
+   methodology names as performative compliance.
+2. *Whitelist mismatch.* The session's genuinely irreversible operations were
+   plugin uninstalls, which were not on the destructive list and passed
+   silently. The operation that *was* gated targeted a directory that did not
+   exist. The gate caught the harmless case and missed the real one.
+3. *Zero bypass cost.* Held once, the agent removed `rm -rf` from the command and
+   proceeded. The outcome was good — the deletion had been unnecessary — but
+   nothing was verified. The gate changed the wording, not the evidence.
+
+A fourth defect surfaced in the PostToolUse hook the same day: on a false
+positive, it **appended a marker comment into the governance file it had just
+flagged**. The skill text promised it did not edit files. Implementation and
+documentation disagreed, and a governance mechanism silently mutating the
+artifact it governs is itself an unlogged state change.
+
+**Correction.** Check structure instead of prose — named fields with real content;
+the operation isolated in its own tool call with no `;`/`&&`/pipe/computed
+target; a read-only call already present in the session. All three are decidable
+from the tool call and the transcript, so none can be produced by writing text.
+Extend the whitelist to plugin/package/config state. Make the PostToolUse
+response an advisory that touches nothing.
+
+**Generalization.** A gate that reads what the agent *says* measures compliance
+theatre. A gate that reads what the agent *did* measures evidence. Prefer a coarse
+detector with a cheap response over a clever detector with an expensive one.
+
+---
+
+### Case 13 — Three versions installed, running from a deleted binary (②)
+
+**Situation.** A question about why a session showed a smaller context window than
+expected.
+
+**The drift.** Three installations of the same tool coexisted: a package manager's
+copy on disk at one version, the desktop application's bundled copy at a second,
+and the **actually executing process at a third** — whose directory had been
+replaced during startup, leaving the process running from an unlinked file.
+
+Every single-point check gave a different, confidently wrong answer.
+`tool --version` in the shell reported the package-manager copy. Listing the
+application's directory reported the bundled copy. Only the running process's own
+`EXECPATH` revealed what was executing, and that path no longer existed on disk.
+
+**Correction.** Read the running process's own identity, not a name resolved
+through `PATH` and not a directory listing.
+
+**Generalization.** This is the four-state separation in its purest form. Source
+verified, configuration verified and runtime activated were three different
+answers at the same instant — and the runtime one had no disk identity to check
+against. Any claim of the form "we are running version X" needs the runtime's own
+evidence, or it is configuration wearing a runtime's clothes.
+
+---
+
 ## How it adds up
 
 | Case | Trigger | Key action |
@@ -321,6 +457,10 @@ schema 提示、路径均已**移除**——只留漂移机制。通用、公开
 | 7 | 外部 AI 方案在合并前被拦 | ②+③(+P0) | 合并前全仓扫描 |
 | 8 | 单用户·单工作树·并行 → 治理险落错分支 | ③ | grounding 工作树/分支核查 |
 | 9 | 形式完整 + 长自主 + compaction = 自审漏抓 | ② 链 | 外部人审 |
+| 10 | 一个从来装不上的已发布治理插件 | ③ | 首次运行官方校验器 |
+| 11 | 两道门拦同一条命令,功劳记错了对象 | ② | transcript 里的原始 hook stdout |
+| 12 | 四个字符就能过的门,真正不可逆的操作却溜了 | ① | 读门自己的源码 |
+| 13 | 装着三个版本,跑的是已被删除的二进制 | ② | `CLAUDE_CODE_EXECPATH` 对照磁盘 |
 
 ---
 
@@ -463,6 +603,108 @@ grounding 核对两端真实存储,并**读了脚本源码**(没猜):拷贝循�
 **如果未拦截。** 四层失效叠加 —— 停错目标、硬件风险被忽视、下游决策建立在继承的未验证事实上;事后定位代价数小时后指数放大。
 
 **与案例 7 互为镜像。** 案例 7 是"外部 AI 的方案在合并前被本地治理拦下" —— 本地治理抓住外部漂移。**案例 9 是它的反镜**:本地治理在特定条件组合(长自主 + compaction + 形式完整)下**漏抓自己**。这是方法论的第二次自审时刻(第一次是 README 引用的那个 ②)。每次这样的时刻都是 ACGM 自身成长的契机,而不是 ACGM 失败的证据。
+
+---
+
+### 案例 10 —— 一个从来装不上的已发布治理插件(③)
+
+**情境。** ACGM v0.1 于 2026 年 5 月公开发布,作者本机日常使用数月。2026-08-05,官方
+校验器**第一次**被拿来跑这个仓库。
+
+**漂移。** `plugin.json` 声明了 `"skills": "skills/"` 和 `"hooks": "hooks/hooks.json"`。
+加载器要求声明路径以 `./` 开头;而 `hooks/hooks.json` 本就自动加载,再声明一次会作为
+重复项失败。**这个已发布的包,谁都装不上。**
+
+它在本机"能用"的原因比 bug 本身更糟。插件是通过 **directory 源 marketplace** 注册的,
+而这种源同步的是**工作目录**,不是 git tree。建缓存时,工作区里恰好有一份未提交、且
+此后从未提交过的 `plugin.json`,而那一份是合法的。于是**真正在运行的字节没有任何 git
+身份**,缓存里还层积了来自三个不同提交的文件,外加一个未跟踪文件。
+
+**为什么没人发现。** 后继版本加了约 4400 行测试、8 项发布契约检查、3 操作系统的 CI
+矩阵。**没有任何一项调用过 `claude plugin validate`**,也没有任何一项问过"这个包能被
+装上吗"。随后它又加了约 3670 行安装器去解决用户报告的安装失败。真实原因是两个缺失的
+`./`。
+
+**纠正。** 修 manifest;补上把加载器规则编码进去的契约测试;把"Claude Code 是否接受这
+个包"做成 CI 任务——从检出目录真装一次,断言 `enabled`。同时记住:**`validate` 通过仍
+然不等于能加载**——重复 hooks 那种配置校验器是放行的,加载器才拒绝。
+
+**一般化。** 治理机制在治理任何东西之前,必须先证明自己装得上。**测试的体量不是覆盖率;
+4400 行从不追问那个关键问题的测试,是 4400 行的自我安慰。**
+
+---
+
+### 案例 11 —— 两道门拦同一条命令,功劳记错了对象(②)
+
+**情境。** 同一 Session 中,一条破坏性 `rm -rf` 被执行前的门拦下。Agent 报告说是 ACGM
+自己的 hook 拦的。
+
+**漂移。** 当时装着两个插件,各有一道 PreToolUse 门。**渲染给用户看的那段文字来自第三方
+那个。** Agent 根据看到的文字、以及自己对"哪个机制在起作用"的预期,把拦截归给了 ACGM。
+后来它从措辞对不上察觉有异,自我纠正为"根本不是 ACGM"——**这次又错了,方向相反**。
+
+只有原始 hook 输出能定论:transcript 里有一条 `PreToolUse` attachment,其 stdout 携带
+ACGM 自己的 `permissionDecision: "ask"`,对应的正是那一条 `toolUseID`。**两道门都开火
+了。** 在读证据之前,agent 已经朝两个相反方向各错了一次。
+
+**为什么这条特别重要。** 本项目的证据登记表里,已经有一条被判为 Rejected 的同型主张:
+早先一次被记为 ACGM 拦截的事件,查实是第三方门拦的。**这个失效模式,在记录了它的项目
+里,换了一个 agent,又复现了一次。**
+
+**纠正。** 归属判定必须用机制自身的输出,并以工具调用为键——不能用人恰好看到的那段文字,
+也不能用"没出现预期措辞"来反推。**在 transcript 里 grep 门的文本也不算归属**:那次计数
+就被污染了,因为 agent 几分钟前刚把 hook 脚本 `cat` 进了同一份 transcript。
+
+**一般化。** 在有多道护栏的环境里,"是什么拦住了它"是一个证据问题。**无法与某个机制对上
+号的拦截,不是你可以宣称的战果。**
+
+---
+
+### 案例 12 —— 四个字符就能过的门,真正不可逆的操作却溜了(①)
+
+**情境。** 在门刚刚开过火的同一 Session 里,读它的源码。
+
+**漂移——机制自身的三个缺陷。**
+
+1. *该用结构的地方用了文字。* 门 grep agent 上一条回复里的字面标记 `(a)`–`(d)`。**四个
+   字符就能满足它。** 从机械层面看,形式合规就是放行条件——恰恰是方法论自己命名的"表演式
+   服从"。
+2. *白名单错配。* 本 Session 真正不可逆的操作是插件卸载,**不在破坏性清单里,静默通过**。
+   而被拦下的那条,目标是一个**并不存在的目录**。门抓住了无害的,漏掉了真的。
+3. *绕过成本为零。* 被拦一次后,agent 把 `rm -rf` 从命令里删掉,继续执行。结果是好的
+   ——那次删除本就多余——**但什么都没被验证。门改变的是措辞,不是证据。**
+
+同一天,PostToolUse hook 暴露了第四个缺陷:在一次**误报**上,它**把一条标记注释追加写进
+了它刚刚标记的那份治理文件**。而 skill 正文明写它不会改文件。实现与文档不一致,并且
+**一个静默改写被治理对象的治理机制,本身就是一次未记录的状态变更**。
+
+**纠正。** 改判结构而非文字——具名字段且有真实内容;操作独占一次工具调用,不得有
+`;`/`&&`/pipe/被计算出的目标;本 Session 内此前必须已有只读调用。这三条都能从工具调用和
+transcript 判定,所以**都不能靠写文字生产出来**。白名单扩到插件/包/配置状态。PostToolUse
+改为只给 advisory,不碰任何文件。
+
+**一般化。** 读 agent **说了什么**的门,量的是合规表演;读 agent **做了什么**的门,量的是
+证据。**宁要"粗检测 + 廉价响应",不要"精检测 + 昂贵响应"。**
+
+---
+
+### 案例 13 —— 装着三个版本,跑的是已被删除的二进制(②)
+
+**情境。** 起因只是一个问题:为什么这个会话的上下文窗口比预期小。
+
+**漂移。** 同一个工具的三份安装同时存在:包管理器在磁盘上的一份是一个版本,桌面应用自带
+的一份是第二个版本,而**真正在执行的进程是第三个版本**——它的目录在启动过程中被替换,
+进程于是运行在一个已被 unlink 的文件上。
+
+**每一种单点检查都给出了不同的、且自信的错误答案。** shell 里 `tool --version` 报的是包
+管理器那份;列应用目录看到的是自带那份;只有运行进程自身的 `EXECPATH` 揭示了实际执行的
+是什么——而那个路径**在磁盘上已经不存在了**。
+
+**纠正。** 读运行进程自身的身份,而不是经 `PATH` 解析出来的名字,也不是目录列表。
+
+**一般化。** 这是四状态分离最纯粹的形态。**源已验证、配置已验证、运行时已激活,在同一
+时刻是三个不同的答案**——而运行时那个答案在磁盘上根本没有可对照的身份。任何"我们正在运行
+版本 X"的说法,要么拿得出运行时自身的证据,要么它只是穿着运行时外衣的配置。
 
 ---
 

@@ -1,22 +1,40 @@
 #!/bin/sh
-# SessionStart grounding injector — part of agent-coding-governance-methodology.
-# Only hooks auto-fire in Claude Code; this injects a thin directive that points
-# at the skills rather than duplicating their content.
+# grounding-inject.sh — ACGM v0.4 SessionStart injector.
+#
+# Only hooks fire automatically in Claude Code, so this points at the skills
+# rather than restating them. Every word here is paid on every session: keep it
+# short, and let the skills carry the detail.
+#
+# It also declares its own limit. A SessionStart message proves this hook ran;
+# it does not prove the other hooks loaded. Saying so here is cheaper than
+# letting the agent infer that governance is fully active.
+
 set -eu
 
 DIR="$(pwd)"
 HAS_GOV="no"
-for f in CLAUDE.md docs/CONSTITUTION.md CONSTITUTION.md AGENTS.md; do
+for f in CLAUDE.md docs/CONSTITUTION.md CONSTITUTION.md AGENTS.md .governance/CONSTITUTION.md; do
   if [ -f "$DIR/$f" ]; then HAS_GOV="yes"; break; fi
 done
 
+DOCTOR="${CLAUDE_PLUGIN_ROOT:-.}/scripts/acgm-doctor.sh"
+
 if [ "$HAS_GOV" = "yes" ]; then
-  MSG="This project uses agent-coding-governance. Before acting: invoke the \`session-grounding\` skill and follow its 5-step ritual (read constitution + root rules, identify track, report 5 items and WAIT for human confirmation, verify after changes, get approval before commit). Before writing any technical conclusion, editing docs, or any irreversible/destructive action: invoke \`truth-first\` (cite file:line for every claim; never \"I think/usually/I recall\"; list + rollback + quote authorization before destructive ops). If this session is a resume / has been compacted: every technical reference (unit name, file path, version, service ID) inherited from prior summary MUST be re-verified at source NOW before reuse — familiar is not truth. 本项目启用治理:动手前先走 session-grounding;写结论/改文档/不可逆操作前先过 truth-first;若本次为续接/曾被 compact,所有摘要继承的指称必须当下重新从源头验证,不许凭印象复用。"
+  MSG="ACGM governance is active in this project.
+
+Before acting, invoke \`session-grounding\`: read the constitution and root rules in full, identify track and scope, re-read current code and Git state, then report five items and WAIT for human confirmation. A handoff, memory entry or compacted summary is historical evidence — never current code truth. If this session was resumed or compacted, every inherited identifier (path, version, service, plugin id) must be re-verified at source NOW before reuse.
+
+Before any technical conclusion, and before any irreversible, destructive or state-changing operation, invoke \`truth-first\`. The gate is structural: state ACGM-EVIDENCE / ACGM-CURRENT-STATE / ACGM-VERIFY-AFTER / ACGM-ROLLBACK with real content, keep source inspection, the operation, and verification in three separate tool calls, and never compound the operation with ';' '&&' '|' or a computed target. A complete gate is evidence, not authorization.
+
+Keep four states apart: source verified, configuration verified, runtime activated, project governed. This message proves only that SessionStart ran. To check the rest: sh ${DOCTOR}
+
+本项目已启用 ACGM 治理:动手前先走 session-grounding(读宪法+根规则、判轨道、重读当前代码与 Git 状态、报告五项等人确认);写技术结论或做不可逆/破坏性/状态变更操作前先过 truth-first(四字段 + 取证/操作/核验三次独立调用,四项齐全也只是证据不是授权);续接或 compact 后,一切继承的指称必须当下从源头重新验证。区分四种状态:源已验证、配置已验证、运行时已激活、项目已治理——本条消息只能证明 SessionStart 跑了。"
 else
-  MSG="agent-coding-governance is installed but no governance docs were found in this project. To bootstrap governance from zero, invoke the \`governance-bootstrap\` skill (a human-driven 8-step checklist). 未发现治理文档;从零建治理请调用 governance-bootstrap。"
+  MSG="agent-coding-governance is installed but no governance docs were found in this project. To bootstrap governance from zero, invoke the \`governance-bootstrap\` skill — a human-driven checklist, not an autonomous run. Its first step is proving the mechanism actually runs: sh ${DOCTOR}
+
+未发现治理文档;从零建治理请调用 governance-bootstrap(人驱动清单,非自主执行)。第一步是证明机制本身在运行。"
 fi
 
-# Emit valid JSON via python3 (portable, correct escaping).
 python3 - "$MSG" <<'PY'
 import json, sys
 print(json.dumps({
