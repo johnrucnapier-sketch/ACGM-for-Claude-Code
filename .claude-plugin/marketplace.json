@@ -1,12 +1,14 @@
 {
   "name": "acgm",
-  "owner": { "name": "johnrucnapier-sketch" },
-  "description": "ACGM — drift control for long-horizon Claude Code development. 长周期 Claude Code 开发漂移控制。",
+  "owner": {
+    "name": "johnrucnapier-sketch"
+  },
+  "description": "ACGM (Agent Coding Governance Methodology) for Claude Code. ACGM(Agent 编码治理方法论)Claude Code 版。",
   "plugins": [
     {
       "name": "acgm",
       "source": "./",
-      "description": "Governance for long-horizon AI/agent coding. 多会话/长周期 agent 开发治理方法论 plugin。"
+      "description": "ACGM (Agent Coding Governance Methodology) for Claude Code — drift control for long-horizon development: a structural gate for destructive operations, evidence-first session grounding, and a self-check that refuses to claim more than it can prove. ACGM(Agent 编码治理方法论)Claude Code 版——长周期开发漂移控制:破坏性操作的结构门、证据优先的 grounding、绝不宣称超出自己能证明范围的自检。"
     }
   ]
 }

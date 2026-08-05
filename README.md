@@ -111,17 +111,18 @@ avoided. This is a *static scaffold*, not a runtime: whether the directive is
 auto-applied depends on whether your agent reads an agents-file by convention. The
 methodology is tool-agnostic in principle — adapt the generic scaffold to your setup.
 
-### Why Claude Code only (honest)
+### Why this repo is Claude Code only (honest)
 
-An earlier version of this repo also targeted Codex. It was removed — deliberately.
-The author's own long-horizon work is almost entirely in Claude Code; Codex was used
-only for light, short tasks, with no large multi-session projects and therefore no
-accumulated long-horizon pain to validate against. Shipping a "works on Codex too"
-claim the author had not actually stress-tested would itself be the ② cognitive
-drift this methodology exists to stop. So only what has been fully practiced ships
-here: Claude Code. The principles are tool-agnostic; this is open-source — if you
-work in Codex or another agent, take the generic scaffold and the principles and
-adapt them to your own setup.
+This repository ships the Claude Code plugin, and nothing else. The mechanisms
+here — the hooks, the gate, doctor, the activity report — are written against
+Claude Code's plugin and hook contracts and have been exercised only there.
+
+The methodology itself is tool-agnostic; a mechanism is not. A "works elsewhere
+too" claim the author had not stress-tested would be the ② cognitive drift this
+project exists to stop, so the split is by repository rather than by a compatibility
+section: **ACGM-for-Codex** is a separate adapter with its own scope and its own
+evidence, and it is not validated by anything measured here. For any other agent,
+take the generic scaffold and the principles and adapt them to your own setup.
 
 ### How "automatic" works (stated honestly)
 
@@ -261,7 +262,23 @@ skeleton — take them and grow your own project's flesh on them.
 - **Maintenance:** a methodology share — issues/PRs welcome, but **self-adaptation is
   the norm; no heavy support promised.**
 
-## Acknowledgements
+## Authors and acknowledgements
+
+- **johnrucnapier-sketch** — methodology, direction, and every go/no-go decision.
+- **Claude Opus 5** — co-author of the v0.4–v0.6 rebuild: the structural gate,
+  doctor, the activity report, the test suites, and the case and evidence entries
+  written from what went wrong while building them.
+
+The commits carry `Co-Authored-By: Claude Opus 5`. GitHub's contributor graph is
+built from author emails that resolve to accounts, so it will not list a model —
+which is why the credit is stated here rather than left to be inferred from a
+graph that structurally cannot show it.
+
+Worth recording plainly, since this project is about not overclaiming: most of the
+defects fixed in v0.4–v0.6 were **introduced** during that same rebuild, by the
+same co-author, and were caught by reading recorded evidence rather than by being
+avoided. The gate denying its own author's commands, repeatedly and correctly, is
+the closest thing here to a validation.
 
 Distilled from the governance practice of a real long-horizon AI-driven development
 project. All business specificity stripped — this repo **contains, and will never
@@ -367,14 +384,15 @@ sh ACGM-for-Claude-Code/scripts/governance-init.sh /你的项目路径
 这是**静态脚手架,不是运行时**:指令会不会被自动应用,取决于你的 agent 是否按约定
 读取 agents 文件。方法论本身原则上工具无关——把通用脚手架按你的场景适配。
 
-### 为什么只留 Claude Code(如实)
+### 为什么本仓只做 Claude Code(如实)
 
-本仓早期版本也做过 Codex 支持,**后来主动删了**。作者自己的长周期开发几乎全程
-Claude Code;Codex 只做过轻量短任务,没有大型多会话项目,因此**没有可供验证的长
-周期痛点积累**。把一个作者并未真正压测过的"Codex 也能用"宣称发出去,本身就是这套
-方法论要消灭的②号认知漂移。所以这里只发**作者完整实践过的**:Claude Code。原则
-是工具无关的;这是开源——你若在 Codex 或别的 agent 上工作,把通用脚手架和原则拿去
-按自己的场景适配。
+本仓只发 Claude Code 插件,不发别的。这里的机制——hooks、证据门、doctor、活跃度
+报告——都是照着 Claude Code 的插件与 hook 契约写的,也只在那里被真正跑过。
+
+**方法论可以工具无关,机制不行。** 把一个没压测过的"别处也能用"宣称发出去,正是这套
+方法论要消灭的②号认知漂移。所以拆分放在仓库层面,而不是写一节兼容性说明:
+**ACGM-for-Codex** 是独立的适配器,有自己的范围和自己的证据,**不因本仓测到的任何
+东西而被验证**。其他 agent 请拿通用脚手架和原则去按自己的场景适配。
 
 ### "自动"是怎么回事(如实)
 
@@ -488,7 +506,19 @@ AI / agent 的时代对我像是枷锁被打开:那些"想得太多、写得太�
   请在你自己项目上体验。
 - **维护:** 方法论分享,欢迎 issue/PR,但**自行适配为主,不承诺重度支持**。
 
-## 致谢
+## 作者与致谢
+
+- **johnrucnapier-sketch** —— 方法论、方向,以及每一个放行/否决的决定。
+- **Claude Opus 5** —— v0.4–v0.6 重建的共同作者:结构门、doctor、活跃度报告、测试套件,
+  以及那些"在造它们的过程中翻了车、于是写下来"的案例与证据条目。
+
+提交带 `Co-Authored-By: Claude Opus 5`。GitHub 的 contributor 图是按能解析到账号的
+author 邮箱生成的,不会列出一个模型——所以署名写在这里,而不是指望一张结构上就显示不了
+它的图。
+
+有一点得如实记下,因为这个项目本身就是关于不夸大的:v0.4–v0.6 修掉的缺陷,**大多是这次
+重建过程中由同一个共同作者引入的**,而它们是靠读记录抓出来的,不是靠没犯。**门反复地、
+正确地拦下它自己作者的命令**——这是这里最接近"验证"的东西。
 
 提炼自一个真实长周期 AI 驱动开发项目的治理实践。已剥离全部业务特质——仓库内**不含也
 永不接受**任何具体项目的业务/机密内容(这本身就是 §④ 范围边界的应用)。

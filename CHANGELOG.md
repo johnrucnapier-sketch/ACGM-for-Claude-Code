@@ -4,6 +4,45 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.6.1] — 2026-08-05
+
+### Fixed
+
+- **The four fields must name the operation they authorise.** The gate reads the
+  most recent assistant text. After one gated operation succeeded, those fields
+  were still the most recent text, so the *next* destructive call inherited them
+  and passed. A command that should have been held was observed passing this way,
+  and the pass was first misdiagnosed as the command not being destructive at all.
+
+  A new BINDING check requires at least one operand from the command — a path, a
+  plugin id, a branch name — to appear in the fields. Evidence written for one
+  target no longer licenses another. Basenames count, so a field may cite a path
+  in an equivalent form. Commands with no identifiable operand are not blocked on
+  this ground; the check does not invent a failure it cannot substantiate.
+
+  Two existing tests began failing when this landed, because they authorised a
+  path with fields describing a plugin install. The check was right and the
+  expectations were wrong. EVIDENCE E-025.
+
+- The same defect has a benign twin: the gate sometimes denies fields that *were*
+  written, because the text block has not reached the transcript when the hook
+  reads it. That direction is a false denial and is safe; it is recorded rather
+  than fixed, since restating the fields resolves it.
+
+### Changed
+
+- **Descriptions spell ACGM out.** The plugin, marketplace and repository
+  descriptions said "governance for long-horizon Claude Code development" without
+  once expanding the acronym they are named after: **Agent Coding Governance
+  Methodology**.
+- The "why Claude Code only" section no longer says Codex support "was removed".
+  That was true of the old repository and is now misleading, since `ACGM-for-Codex`
+  exists as a separate adapter. The split is stated as one of repository and
+  evidence: nothing measured here validates that adapter.
+- README credits its authors, including the model that co-wrote the v0.4–v0.6
+  rebuild, and states plainly that most defects fixed in those versions were
+  introduced during that rebuild and caught by reading evidence.
+
 ## [0.6.0] — 2026-08-05
 
 ### Changed

@@ -1,7 +1,7 @@
 {
   "name": "acgm",
-  "version": "0.6.0",
-  "description": "Drift control for long-horizon Claude Code development: a structural gate for destructive operations, evidence-first grounding, and a self-check that refuses to claim more than it can prove. 长周期 Claude Code 开发漂移控制：破坏性操作的结构门、证据优先的 grounding、以及一个绝不宣称超出自己能证明范围的自检。",
+  "version": "0.6.1",
+  "description": "ACGM (Agent Coding Governance Methodology) for Claude Code — drift control for long-horizon development: a structural gate for destructive operations, evidence-first session grounding, and a self-check that refuses to claim more than it can prove. ACGM(Agent 编码治理方法论)Claude Code 版——长周期开发漂移控制:破坏性操作的结构门、证据优先的 grounding、绝不宣称超出自己能证明范围的自检。",
   "author": {
     "name": "johnrucnapier-sketch"
   },
@@ -18,5 +18,6 @@
   ],
   "skills": [
     "./skills/"
-  ]
+  ],
+  "displayName": "ACGM for Claude Code"
 }

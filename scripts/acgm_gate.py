@@ -148,6 +148,66 @@ def missing_fields(text: str) -> list[str]:
     return absent
 
 
+# Words that name the tool, not the thing being operated on.
+NOT_A_TARGET = {
+    "sudo", "env", "time", "xargs", "git", "npm", "pip", "brew", "claude", "plugin",
+    "marketplace", "systemctl", "launchctl", "install", "uninstall", "update",
+    "remove", "enable", "disable", "reset", "clean", "push", "force", "branch",
+    "checkout", "rebase", "stash", "drop", "clear", "table", "database", "from",
+    "delete", "truncate", "shred", "rmdir", "pkill", "shutdown", "reboot", "mkfs",
+    "filter", "refresh", "global", "recursive", "hard",
+}
+TOKEN = re.compile(r"[A-Za-z0-9_.@:~/-]{3,}")
+
+
+def target_tokens(command: str) -> list[str]:
+    """Words from the command that name what it acts on.
+
+    Used to bind the four fields to *this* operation. Flags and the names of the
+    tools themselves are excluded; what remains is paths, ids, branch names and
+    similar operands.
+    """
+    # The shell filter already stripped heredoc bodies and /dev/null redirects
+    # before deciding this was destructive; here the raw invocation is fine,
+    # because any token in it is still a token of *this* call.
+    tokens = []
+    for raw in TOKEN.findall(command):
+        word = raw.strip("'\"`,;")
+        if not word or word.startswith("-"):
+            continue
+        if word.lower() in NOT_A_TARGET:
+            continue
+        if any(ch in word for ch in "/@:") or len(word) >= 5:
+            tokens.append(word)
+    return tokens
+
+
+def fields_name_this_target(text: str, command: str) -> bool:
+    """True if the fields mention something the command actually acts on.
+
+    Without this, the gate can be satisfied by evidence written for an earlier
+    operation: the fields stay the most recent assistant text, so the next
+    destructive call inherits them. Observed 2026-08-05 — a command passed on
+    fields written for the previous one, and the pass was initially misread as
+    the command not being destructive at all.
+
+    A basename also counts, so a field may cite a path in a different but
+    equivalent form.
+    """
+    tokens = target_tokens(command)
+    if not tokens:
+        return True  # nothing identifiable to bind to; do not invent a failure
+    haystack = text.lower()
+    for token in tokens:
+        needle = token.lower()
+        if needle in haystack:
+            return True
+        base = needle.rstrip("/").rsplit("/", 1)[-1]
+        if len(base) >= 4 and base in haystack:
+            return True
+    return False
+
+
 def operative_segments(command: str) -> list[str]:
     """Segments that actually do something, ignoring environment setup."""
     return [
@@ -299,6 +359,14 @@ def main() -> None:
             "FIELDS — missing or placeholder: %s\n"
             "    Each field needs current-session content, not a template and not\n"
             "    a claim inherited from a summary." % ", ".join(absent)
+        )
+    elif not fields_name_this_target(text, command):
+        problems.append(
+            "BINDING — the four fields do not name anything this command acts on:\n"
+            "    %s\n"
+            "    Fields written for a previous operation stay the most recent text\n"
+            "    and would otherwise license this one. Name the actual target."
+            % ", ".join(sorted(set(target_tokens(command)))[:6])
         )
 
     if transcript:
