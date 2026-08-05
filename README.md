@@ -11,12 +11,15 @@
 > **One sentence:** long-horizon AI-driven development **rots structurally** — unless
 > there is governance.
 >
-> Distilled from a real project (a dozen-plus versions, dozens of sessions, ~2B
-> tokens of mistakes). What you get: an agent that takes fewer wrong turns, makes
-> fewer fabricated claims, and does fewer destructive actions across long timelines —
-> at the cost of it stopping to verify more. It ships as a Claude Code plugin
-> (runtime-automatic). A generic, plugin-free scaffold is also included for other
-> setups.
+> Distilled from a real project: **months of work, several hundred thousand lines,
+> shipped to an app store** — many versions, dozens of sessions, and about 2B tokens
+> of mistakes. What you get: an agent that takes fewer wrong turns, makes fewer
+> fabricated claims, and does fewer destructive actions across long timelines — at
+> the cost of it stopping to verify more. It ships as a Claude Code plugin
+> (runtime-automatic). A generic, plugin-free scaffold is included for other setups.
+>
+> **In progress, and meant to shrink.** As models absorb what this used to enforce,
+> those mechanisms are removed rather than kept out of habit.
 
 ## What this is / why you need it
 
@@ -49,18 +52,26 @@ First learn to **recognize which type it is**, then talk about how to fix it.
 
 > Real, desensitized cases for each drift type: see **[CASES.md](CASES.md)**.
 
-## Real-world hit rate (factual, not extrapolated)
+## Real-world hit rate (what is measured, and what is not)
 
-In a **single 2–3 hour continuous work session**, this methodology triggered
-**7 distinct drift detections** — including one data-migration bug that would have
-**silently dropped real rows** (caught at the instant of the Bash command), and a
-"your premise is false" block where a spec disagreed with code truth. One recorded
-case is an **external AI's modification plan caught by the local governance before
-merge**. The full, desensitized set is in **[CASES.md](CASES.md)**.
+In a **single 2–3 hour continuous work session** in May 2026, this methodology
+triggered **7 distinct drift detections** — including one data-migration bug that
+would have **silently dropped real rows** (caught at the instant of the Bash
+command), and a "your premise is false" block where a spec disagreed with code
+truth. One recorded case is an **external AI's modification plan caught by the
+local governance before merge**.
 
-This is **one observed window, not an extrapolated average** — assess the rate on
-your own project. If you install this and nothing ever triggers: either your project
-isn't yet at the scale that needs it, or it isn't wired correctly.
+**That figure is a single window from May and has not been re-measured since.**
+The project it came from has run for months longer, and the rate is now much
+higher — but **[CASES.md](CASES.md) has not kept pace with the usage**, so the
+honest position is: the recorded cases are a floor, not an average, and nobody
+should treat the number as a benchmark.
+
+Assess the rate on your own project. If you install this and nothing ever
+triggers, one of three things is true: your project isn't yet at the scale that
+needs it, it isn't wired correctly, or the gate simply had no destructive
+operation to catch. Those look identical from the outside, which is why
+`acgm_activity.py` reports counts **with their denominator**.
 
 ## Quick start
 
@@ -77,9 +88,21 @@ Two steps (honest — not literally one command):
    /plugin install acgm@acgm
    ```
 
-**Exact commands follow current official Claude Code docs** — CC's plugin/marketplace
-syntax may change by version; if `/plugin install` differs, just open the `/plugin`
-menu and install it from the marketplace you added in step 1.
+The same two steps from a terminal, which is the form this project's CI runs on
+every push:
+
+```
+claude plugin marketplace add johnrucnapier-sketch/ACGM-for-Claude-Code
+claude plugin install acgm@acgm
+```
+
+**Plugin syntax changes between Claude Code versions.** If a command differs from
+what is written here, open the `/plugin` menu and install from the marketplace you
+added in step 1.
+
+**Then start a new session.** Hooks are bound when a session starts; installing or
+upgrading mid-session does not change the session you are in. This catches people
+out, including the author — repeatedly, while building v0.4.
 
 *You'll know it worked when:* at the next session start the SessionStart hook
 injects a grounding directive — the agent acknowledges governance and runs the
@@ -87,12 +110,18 @@ injects a grounding directive — the agent acknowledges governance and runs the
 `governance-bootstrap`) instead of diving straight into edits.
 
 *And check it, don't assume it.* `claude plugin list` showing **enabled** is
-configuration, not activation — a plugin can be registered and still fail to
-load. Run `sh scripts/acgm-doctor.sh` for the configuration side, and treat
-observed hook output in your own session as the only proof of activation. This
-distinction is not pedantic: v0.1 of this plugin was published for three months
-in a state where no clean install could load it, while appearing healthy on the
-author's machine (CASES.md Case 10).
+configuration, not activation — a plugin can be registered and still fail to load:
+
+```
+sh scripts/acgm-doctor.sh            # configuration: manifest, hooks, cache drift
+python3 scripts/acgm_activity.py     # activation already on record, with denominators
+```
+
+Doctor will not tell you the plugin is running, because a subprocess cannot observe
+the session that started it. Only hook output you see in your own session proves
+that. This distinction is not pedantic: v0.1 of this plugin was published for three
+months in a state where **no clean install could load it**, while appearing healthy
+on the author's machine (CASES.md Case 10).
 
 ### Without the plugin (generic scaffold)
 
@@ -111,18 +140,25 @@ avoided. This is a *static scaffold*, not a runtime: whether the directive is
 auto-applied depends on whether your agent reads an agents-file by convention. The
 methodology is tool-agnostic in principle — adapt the generic scaffold to your setup.
 
-### Why this repo is Claude Code only (honest)
+### Claude Code only, by design — and where Codex went
 
-This repository ships the Claude Code plugin, and nothing else. The mechanisms
-here — the hooks, the gate, doctor, the activity report — are written against
-Claude Code's plugin and hook contracts and have been exercised only there.
+**This project is designed entirely for Claude Code.** The mechanisms here — the
+hooks, the structural gate, doctor, the activity report — are written against
+Claude Code's plugin and hook contracts, and have been exercised only there.
 
-The methodology itself is tool-agnostic; a mechanism is not. A "works elsewhere
-too" claim the author had not stress-tested would be the ② cognitive drift this
-project exists to stop, so the split is by repository rather than by a compatibility
-section: **ACGM-for-Codex** is a separate adapter with its own scope and its own
-evidence, and it is not validated by anything measured here. For any other agent,
-take the generic scaffold and the principles and adapt them to your own setup.
+An early version bundled a Codex path. It was dropped in May 2026 for a plain
+reason: the author was not using Codex enough to have validated it, and shipping
+an unvalidated "works there too" claim would be the ② cognitive drift this project
+exists to stop. That was a statement about the author's evidence, not about Codex.
+
+Codex support now lives in its own repository, because **the working logic differs
+enough that one plugin serving both would serve neither well**:
+
+> **[ACGM-for-Codex](https://github.com/johnrucnapier-sketch/ACGM-for-Codex)**
+
+The author intends to maintain both as time allows. They share the methodology and
+not the mechanism, and **nothing measured in this repository validates that one**.
+For any other agent, take the generic scaffold and the principles and adapt them.
 
 ### How "automatic" works (stated honestly)
 
@@ -186,6 +222,7 @@ scripts/acgm_gate.py               ← the structural gate itself, and the Sessi
 scripts/post-tool-truth-first.sh   ← PostToolUse: advisory on governance-doc writes; edits nothing
 scripts/sessionend-obligations.sh  ← SessionEnd: unverified post-action promises
 scripts/acgm-doctor.sh             ← health check; reports activation as not provable from a subprocess
+scripts/acgm_activity.py           ← activation already on record, across projects, with denominators
 scripts/governance-init.sh         ← plugin-free generic scaffold: writes CONSTITUTION/AGENTS/CLAUDE pointer
 scripts/drift-check.sh             ← static drift scanner (run manually or in CI)
 tests/                             ← contract + behaviour tests, hermetic (run with CLAUDECODE set and unset)
@@ -217,12 +254,37 @@ principles / the layered structure / the bootstrap recipe / the self-check redli
 
 ## Real background (the strongest credibility)
 
-This system **committed drift ② against itself while being built** — the builder
-copied a pile of technical conclusions out of old handoff docs without reading the
-code, and was caught in the act by the project owner. That is exactly the proof:
-**discipline is not for "other people", it is for you, every single time you write
-something right now.** Writing a real incident like this permanently into the
-governance file as a cautionary case is ten times more useful than an abstract rule.
+This was not distilled from a toy. It comes out of a **months-long, several-hundred-
+thousand-line application that shipped to an app store**, built with an agent across
+dozens of sessions, many versions, and repeated requirement changes. Over that
+span the methodology **measurably improved stability and reduced errors** in exactly
+the place long projects fail: the second month, the fifteenth session, the third
+time a requirement moved.
+
+It also **committed drift ② against itself while being built** — the builder copied
+a pile of technical conclusions out of old handoff docs without reading the code,
+and was caught in the act by the project owner. That is the proof, not an
+embarrassment: **discipline is not for "other people", it is for you, every single
+time you write something right now.** Writing a real incident permanently into the
+governance file as a cautionary case is worth ten abstract rules.
+
+### Status: in progress, and deliberately shrinking
+
+This is a **live project, not a finished framework**, and two forces are pulling on
+it at once.
+
+**Models keep absorbing what the tooling used to supply.** With the capability jump
+in July 2026, some of what this plugin enforces is becoming native behaviour. The
+plan is to **progressively remove what the model has internalised** rather than keep
+it out of habit — a governance layer that never shrinks eventually becomes the
+overhead it was meant to prevent. Every mechanism here should have to re-justify its
+existence as models improve.
+
+**It is tuned to what the author has actually run.** A great deal of the adaptation
+in it was worked out against **Opus 4.6 – 4.8**. The author has only just started
+working on **Opus 5**, so the fit there is still being learned, and this project will
+keep changing as that experience accumulates. Treat version numbers here as a record
+of what has been tried, not as a claim of general coverage.
 
 ## Origin — why this exists
 
@@ -300,10 +362,12 @@ application of §④, the scope boundary).
 
 > **一句话:** AI 驱动的长周期开发会**结构性地腐化**——除非有治理。
 >
-> 提炼自一个真实项目(十几个版本、数十 session、~20 亿 token 踩坑)。你能得到的:
-> 在长周期里,agent 走错路更少、编造结论更少、破坏性动作更少——代价是它会更频繁地
-> 停下来核实。以 Claude Code 插件形式分发(运行时自动);另附一个无需插件的通用
-> 脚手架供其它场景。
+> 提炼自一个真实项目:**跨度数月、几十万行代码、已上线应用市场**——多个版本、数十
+> session、约 20 亿 token 的踩坑。你能得到的:在长周期里,agent 走错路更少、编造结论
+> 更少、破坏性动作更少——代价是它会更频繁地停下来核实。以 Claude Code 插件形式分发
+> (运行时自动);另附一个无需插件的通用脚手架供其它场景。
+>
+> **进行时,而且以收缩为目标。** 模型内化掉的能力,就从这里移除,而不是出于惯性留着。
 
 ## 这是什么 / 为什么需要
 
@@ -331,15 +395,20 @@ application of §④, the scope boundary).
 
 > 每类漂移的真实脱敏案例见 **[CASES.md](CASES.md)**。
 
-## 实际命中率(事实,非外推)
+## 实际命中率(测到了什么,以及没测什么)
 
-在**一次 2–3 小时的连续工作**里,这套方法论触发了 **7 次明确的漂移检测**——其中
-一次是会**静默丢失真实数据行**的数据迁移 bug(在 Bash 命令那一刻被拦),还有一次
-"你的前提不成立"阻塞(spec 与代码真值不符)。其中一例是**外部 AI 写的修改方案在
-合并前被本地治理拦下**。完整脱敏案例见 **[CASES.md](CASES.md)**。
+2026 年 5 月的**一次 2–3 小时连续工作**里,这套方法论触发了 **7 次明确的漂移检测**
+——其中一次是会**静默丢失真实数据行**的数据迁移 bug(在 Bash 命令那一刻被拦),还有
+一次"你的前提不成立"阻塞(spec 与代码真值不符)。其中一例是**外部 AI 写的修改方案在
+合并前被本地治理拦下**。
 
-这是**一次观测窗口,不是外推的平均率**——具体频率请在你自己项目上判断。如果你装上
-后什么都没触发:要么你的项目还没到需要它的规模,要么没装对。
+**这个数字只是 5 月的一次窗口,此后没有再测过。** 它来自的那个项目又跑了好几个月,
+实际命中率已经**远高于此**——但 **[CASES.md](CASES.md) 没有跟上使用进度**。所以如实
+说:已记录的案例是**下限,不是平均值**,任何人都不该把这个数字当基准。
+
+频率请在你自己项目上判断。如果你装上后什么都没触发,只有三种可能:项目还没到需要它
+的规模、没装对、或者根本没出现过可拦的破坏性操作。**这三种从外面看一模一样**——这
+正是 `acgm_activity.py` 报告计数时**必带分母**的原因。
 
 ## 快速开始
 
@@ -356,17 +425,33 @@ application of §④, the scope boundary).
    /plugin install acgm@acgm
    ```
 
-**确切命令以当前 Claude Code 官方文档为准**——CC 的 plugin/marketplace 语法可能随
-版本变化;若 `/plugin install` 形式不同,就打开 `/plugin` 菜单,从第 1 步加的
-marketplace 里装。
+同样两步的终端形式,本项目的 CI 每次推送都在跑这个形式:
+
+```
+claude plugin marketplace add johnrucnapier-sketch/ACGM-for-Claude-Code
+claude plugin install acgm@acgm
+```
+
+**plugin 语法会随 Claude Code 版本变化。** 若与这里写的不同,就打开 `/plugin` 菜单,
+从第 1 步加的 marketplace 里装。
+
+**然后开一个新会话。** hook 在会话启动时绑定,**中途安装或升级不会改变你当前所在的
+会话**。这一点很坑人,作者本人在做 v0.4 的过程中反复栽在上面。
 
 *成功的样子:* 下次 session 启动时,SessionStart hook 会注入一段 grounding 指令——
 agent 会先确认治理、走 5 步 grounding(或在项目还没治理文档时,引导你调
 `governance-bootstrap`),而不是直接埋头改代码。
 
 *但要去查,不要假设。* `claude plugin list` 显示 **enabled** 是**配置**,不是**激活**
-——插件可以注册成功却加载失败。配置这一侧跑 `sh scripts/acgm-doctor.sh`;激活这一侧,
-**只有你自己会话里观察到的 hook 输出**才算证据。这个区分不是抠字眼:本插件 v0.1 公开
+——插件可以注册成功却加载失败:
+
+```
+sh scripts/acgm-doctor.sh            # 配置侧:manifest、hooks、缓存漂移
+python3 scripts/acgm_activity.py     # 已记录的激活情况,带分母
+```
+
+doctor **不会**告诉你插件正在运行,因为子进程观察不到启动它的那个会话。**只有你自己
+会话里看到的 hook 输出**才算激活证据。这个区分不是抠字眼:本插件 v0.1 公开
 发布了三个月,期间任何 clean install 都装不上,而它在作者本机上看起来一切正常
 (CASES.md 案例 10)。
 
@@ -384,15 +469,22 @@ sh ACGM-for-Claude-Code/scripts/governance-init.sh /你的项目路径
 这是**静态脚手架,不是运行时**:指令会不会被自动应用,取决于你的 agent 是否按约定
 读取 agents 文件。方法论本身原则上工具无关——把通用脚手架按你的场景适配。
 
-### 为什么本仓只做 Claude Code(如实)
+### 完全为 Claude Code 而设计——以及 Codex 去哪了
 
-本仓只发 Claude Code 插件,不发别的。这里的机制——hooks、证据门、doctor、活跃度
+**这个项目是完全为 Claude Code 设计的。** 这里的机制——hooks、结构门、doctor、活跃度
 报告——都是照着 Claude Code 的插件与 hook 契约写的,也只在那里被真正跑过。
 
-**方法论可以工具无关,机制不行。** 把一个没压测过的"别处也能用"宣称发出去,正是这套
-方法论要消灭的②号认知漂移。所以拆分放在仓库层面,而不是写一节兼容性说明:
-**ACGM-for-Codex** 是独立的适配器,有自己的范围和自己的证据,**不因本仓测到的任何
-东西而被验证**。其他 agent 请拿通用脚手架和原则去按自己的场景适配。
+早期版本里带过一条 Codex 路径,**2026 年 5 月被拿掉了**,原因很朴素:作者当时用 Codex
+不够多,没有验证过它,而把一个未经验证的"那边也能用"发出去,正是这套方法论要消灭的
+②号认知漂移。**那是关于作者证据不足的陈述,不是关于 Codex 的判断。**
+
+Codex 的支持现在有自己的仓库,因为**两边的工作逻辑差异足够大,一个插件同时伺候两边,
+结果是两边都伺候不好**:
+
+> **[ACGM-for-Codex](https://github.com/johnrucnapier-sketch/ACGM-for-Codex)**
+
+作者有时间的话会同时维护两个项目。它们**共享方法论,不共享机制**,而且**本仓测到的
+任何东西都不构成对那个项目的验证**。其他 agent 请拿通用脚手架和原则去按自己的场景适配。
 
 ### "自动"是怎么回事(如实)
 
@@ -443,6 +535,7 @@ scripts/acgm_gate.py               ← 结构门本体,以及 SessionEnd 的未�
 scripts/post-tool-truth-first.sh   ← PostToolUse:治理文档写入提醒,不改任何文件
 scripts/sessionend-obligations.sh  ← SessionEnd:未核验的后验承诺
 scripts/acgm-doctor.sh             ← 健康检查;把"运行时激活"报为子进程无法证明
+scripts/acgm_activity.py           ← 已记录的激活情况,跨项目,带分母
 tests/                             ← 契约与行为测试,密封(CLAUDECODE 设与不设各跑一次)
 CHANGELOG.md / EVIDENCE.md         ← 发布历史;每条主张的成熟度登记表
 scripts/governance-init.sh         ← 无需插件的通用脚手架:铺 CONSTITUTION/AGENTS/CLAUDE 指针
@@ -472,9 +565,27 @@ LICENSING.md / LICENSE-DOCS / LICENSE-CODE  ← 双轨:文档 CC-BY-4.0,代码 M
 
 ## 真实背景(最强的可信度)
 
-这套体系**在被搭建的过程中,搭建者自己就犯了②号漂移**——从旧交接文档抄了一堆技术
-结论没去读代码,被项目所有者当场抓出。这恰恰证明:**纪律不是给"别人"的,是给当下
-每一次写字的你的。** 把这类真实事故永久写进治理文件当警示案例,比抽象规则有用十倍。
+这不是从玩具项目里提炼的。它来自一个**跨度数月、几十万行代码、已经上线应用市场**的
+应用——用 agent 开发,几十个 session,多个版本,反复变更的需求。在这个跨度上,这套
+方法论**确实有效提高了稳定性、减少了错误**,而且正是在长项目最容易崩的地方:第二个月、
+第十五个 session、需求第三次改动的时候。
+
+它同时**在被搭建的过程中,搭建者自己就犯了②号漂移**——从旧交接文档抄了一堆技术结论
+没去读代码,被项目所有者当场抓出。这不是丢人,这恰恰是证据:**纪律不是给"别人"的,
+是给当下每一次写字的你的。** 把真实事故永久写进治理文件当警示案例,顶十条抽象规则。
+
+### 状态:进行时,而且在**有意收缩**
+
+这是一个**活的项目,不是完成的框架**,而且有两股力量同时拉扯它。
+
+**模型正在把工具层曾经提供的东西内化掉。** 随着 2026 年 7 月这轮能力跃升,本插件强制
+的一部分东西正在变成模型的原生行为。计划是**逐步移除模型已经内化的部分**,而不是出于
+惯性留着——**一个只增不减的治理层,最终会变成它当初要防的那种开销**。这里每一个机制,
+都应该随着模型进步重新证明自己还有存在的必要。
+
+**它贴着作者实际跑过的东西调。** 里面大量的适配是针对 **Opus 4.6 – 4.8** 磨出来的。
+作者**刚刚开始在 Opus 5 上工作**,契合度还在摸索,这个项目会随着这段经验的累积继续改。
+这里的版本号请当作"试过什么"的记录,不是"普遍适用"的宣称。
 
 ## 初衷 / 为什么会有这套东西
 
