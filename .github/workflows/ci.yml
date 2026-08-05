@@ -76,10 +76,10 @@ jobs:
           set -euo pipefail
           cd /tmp
           claude plugin marketplace add "$GITHUB_WORKSPACE"
-          claude plugin install agent-coding-governance-methodology@agent-coding-governance-methodology
+          claude plugin install acgm@acgm
           claude plugin list | tee /tmp/plugins.txt
           grep -q 'failed to load' /tmp/plugins.txt && {
             echo "::error::plugin registered but failed to load"; exit 1; }
           grep -q 'enabled' /tmp/plugins.txt || {
             echo "::error::plugin is not enabled after install"; exit 1; }
-          claude plugin details agent-coding-governance-methodology@agent-coding-governance-methodology
+          claude plugin details acgm@acgm

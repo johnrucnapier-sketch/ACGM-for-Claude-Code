@@ -70,11 +70,11 @@ Two steps (honest — not literally one command):
 
 1. Register the marketplace:
    ```
-   /plugin marketplace add johnrucnapier-sketch/Agent-Coding-Governance-Methodology
+   /plugin marketplace add johnrucnapier-sketch/ACGM-for-Claude-Code
    ```
 2. Install the plugin (from the `/plugin` menu, or):
    ```
-   /plugin install agent-coding-governance-methodology@agent-coding-governance-methodology
+   /plugin install acgm@acgm
    ```
 
 **Exact commands follow current official Claude Code docs** — CC's plugin/marketplace
@@ -100,8 +100,8 @@ If you are not using the Claude Code plugin, a plugin-free scaffolder drops the
 governance files into any project:
 
 ```
-git clone https://github.com/johnrucnapier-sketch/Agent-Coding-Governance-Methodology
-sh Agent-Coding-Governance-Methodology/scripts/governance-init.sh /path/to/your-project
+git clone https://github.com/johnrucnapier-sketch/ACGM-for-Claude-Code
+sh ACGM-for-Claude-Code/scripts/governance-init.sh /path/to/your-project
 ```
 
 It writes `CONSTITUTION.md` + `AGENTS.md` (a generic agent-governance directive) +
@@ -332,11 +332,11 @@ application of §④, the scope boundary).
 
 1. 注册 marketplace:
    ```
-   /plugin marketplace add johnrucnapier-sketch/Agent-Coding-Governance-Methodology
+   /plugin marketplace add johnrucnapier-sketch/ACGM-for-Claude-Code
    ```
 2. 安装插件(用 `/plugin` 菜单,或):
    ```
-   /plugin install agent-coding-governance-methodology@agent-coding-governance-methodology
+   /plugin install acgm@acgm
    ```
 
 **确切命令以当前 Claude Code 官方文档为准**——CC 的 plugin/marketplace 语法可能随
@@ -358,8 +358,8 @@ agent 会先确认治理、走 5 步 grounding(或在项目还没治理文档时
 若你不用 Claude Code 插件,有一个无需插件的脚手架,把治理文件铺进任意项目:
 
 ```
-git clone https://github.com/johnrucnapier-sketch/Agent-Coding-Governance-Methodology
-sh Agent-Coding-Governance-Methodology/scripts/governance-init.sh /你的项目路径
+git clone https://github.com/johnrucnapier-sketch/ACGM-for-Claude-Code
+sh ACGM-for-Claude-Code/scripts/governance-init.sh /你的项目路径
 ```
 
 它写 `CONSTITUTION.md` + `AGENTS.md`(一份通用 agent 治理指令)+ `CLAUDE.md` 指针

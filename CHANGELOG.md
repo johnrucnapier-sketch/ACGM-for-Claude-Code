@@ -1,6 +1,29 @@
 # Changelog
 
-Plugin id: `agent-coding-governance-methodology@agent-coding-governance-methodology`.
+Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
+`agent-coding-governance-methodology@agent-coding-governance-methodology`; that
+line is left as written rather than rewritten to match the present.
+
+## [0.6.0] — 2026-08-05
+
+### Changed
+
+- **Renamed.** The plugin and marketplace are now `acgm`, so the id is
+  `acgm@acgm` and skills are invoked as `/acgm:truth-first`. The previous id was
+  71 characters and had to be typed to install anything.
+- The repository is `ACGM-for-Claude-Code`, a sibling of `ACGM-for-Codex` rather
+  than a standalone phrase. "Methodology" in a repository name reads as a
+  document; people looking for a plugin scroll past it.
+
+### Notes
+
+- Renaming changes the id, so an existing install is not upgraded in place: the
+  old id must be uninstalled and `acgm@acgm` installed. Because plugins are
+  user-scope, that is one uninstall and one install for the whole machine, not
+  one per project.
+- Discovery is carried by the description and topics far more than by the name.
+  The rename is for the person typing the install command.
+
 
 ## [0.5.1] — 2026-08-05
 

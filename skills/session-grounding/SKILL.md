@@ -57,7 +57,7 @@ Before a recognized irreversible, destructive or state-changing operation,
 switch to:
 
 ```text
-/agent-coding-governance-methodology:truth-first
+/acgm:truth-first
 ```
 
 Do the read-only source check in its own call first, then state the four fields
@@ -111,7 +111,7 @@ Session 内观察到的 hook 输出才是激活。
 执行已识别的不可逆、破坏性或状态变更操作前,切换到:
 
 ```text
-/agent-coding-governance-methodology:truth-first
+/acgm:truth-first
 ```
 
 先用独立调用做只读取证,再在紧邻操作之前写出四个字段。它们是证据,不是授权:人仍然

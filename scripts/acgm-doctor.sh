@@ -28,7 +28,7 @@ if [ -z "$PLUGIN_DIR" ]; then
   PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
 fi
 
-PLUGIN_ID='agent-coding-governance-methodology@agent-coding-governance-methodology'
+PLUGIN_ID='acgm@acgm'
 fails=0
 warns=0
 

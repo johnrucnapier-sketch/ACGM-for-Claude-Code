@@ -1,5 +1,5 @@
 #!/bin/sh
-# governance-init.sh — plugin-free scaffolder for agent-coding-governance-methodology.
+# governance-init.sh — plugin-free scaffolder for acgm.
 #
 # What this is (honest, per the methodology's own truth-first principle):
 #   This is a SCAFFOLDER, not a runtime. It writes governance files into a target
@@ -112,9 +112,9 @@ is a default — redefine it for your project if needed, but keep it explicit. /
 默认判据:只有"为软件能开发/上线/运行"的内容属于这里;经营/战略/与软件无关的
 规划 = OUT。此判据是默认值——需要可按项目重定义,但必须显式。
 
-> Full methodology: see the agent-coding-governance-methodology repo
+> Full methodology: see the acgm repo
 > (METHODOLOGY.md). Full setup is human-driven (governance-bootstrap / §12). /
-> 完整方法论见 agent-coding-governance-methodology 仓库;完整搭建是人驱动的。
+> 完整方法论见 acgm 仓库;完整搭建是人驱动的。
 EOF
   note_make "AGENTS.md  (generic agent-governance directive)"
 fi

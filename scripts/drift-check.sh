@@ -1,5 +1,5 @@
 #!/bin/sh
-# drift-check.sh — static drift scanner for agent-coding-governance-methodology.
+# drift-check.sh — static drift scanner for acgm.
 #
 # Exit 0 = no drift detected, 1 = drift detected. Default: markdown report to
 # stdout. `--output FILE` also writes the report to FILE. `--strict` enables the

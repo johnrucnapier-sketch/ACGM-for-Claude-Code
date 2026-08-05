@@ -1,10 +1,10 @@
 {
-  "name": "agent-coding-governance-methodology",
+  "name": "acgm",
   "owner": { "name": "johnrucnapier-sketch" },
   "description": "ACGM — drift control for long-horizon Claude Code development. 长周期 Claude Code 开发漂移控制。",
   "plugins": [
     {
-      "name": "agent-coding-governance-methodology",
+      "name": "acgm",
       "source": "./",
       "description": "Governance for long-horizon AI/agent coding. 多会话/长周期 agent 开发治理方法论 plugin。"
     }
