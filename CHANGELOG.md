@@ -2,6 +2,49 @@
 
 Plugin id: `agent-coding-governance-methodology@agent-coding-governance-methodology`.
 
+## [0.5.0] — 2026-08-05
+
+### Added
+
+- **`scripts/acgm_activity.py` — activation you can check after the fact.**
+  Doctor honestly refuses to report runtime activation, because a subprocess
+  cannot observe the session that started it. That left a real question
+  unanswered: *did the plugin actually do anything over in that other project?*
+  This reads it out of each session's recorded hook output.
+
+  Three properties it is built around, each one a mistake already made in this
+  repository:
+
+  - **Attribution reads the mechanism's own output, keyed by tool call.** Never a
+    text search — a transcript is full of the gate's own wording that the agent
+    quoted, printed or `cat`-ed. Counting those is CASES Case 11.
+  - **Counts come with their denominator.** "The gate never fired" and "the gate
+    is not installed" are indistinguishable until you know how many destructive
+    commands it had the chance to catch.
+  - **The finding worth acting on is the gap** — a destructive call with no gate
+    decision against its id. Reported separately from `INACTIVE`, which means no
+    hook output at all: the second is broader, and calling it a gap would
+    understate it.
+
+  It also distinguishes hook versions by their wording, so a session running
+  stale hooks is visible, and it announces truncation rather than silently
+  showing the first few.
+
+### Changed
+
+- Doctor's activation note now points at the activity report instead of ending
+  at "not provable from here".
+
+### Notes
+
+- The reporter re-implements the shell filter's classification in Python.
+  `tests/test_activity.py` sends one corpus through both and fails on any
+  disagreement — the duplication is not prevented, it is made loud.
+- The first draft of the reporter found every `ask` and no `deny`, minutes after
+  a deny had been watched happening. A denied call is recorded as an error
+  `tool_result`, an asked one as a hook attachment. Both are read now, and both
+  shapes are covered by tests.
+
 ## [0.4.2] — 2026-08-05
 
 ### Fixed

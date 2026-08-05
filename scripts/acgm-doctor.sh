@@ -199,6 +199,8 @@ fi
 note "runtime activation" "NOT PROVABLE FROM HERE — doctor is a subprocess."
 note "" "Activation means: a hook produced output in YOUR session."
 note "" "Everything above is configuration. Do not report it as 'running'."
+note "" "For activation already on record, across projects and sessions:"
+note "" "  python3 $PLUGIN_DIR/scripts/acgm_activity.py"
 
 printf '\n'
 if [ "$fails" -gt 0 ]; then

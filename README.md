@@ -141,6 +141,14 @@ adapt them to your own setup.
 - **`sh scripts/acgm-doctor.sh` tells you what is actually wired**, and refuses to
   claim what it cannot prove: it reports runtime activation as *not provable from
   here*, because doctor is a subprocess and cannot observe the session that ran it.
+- **`python3 scripts/acgm_activity.py` answers the question doctor cannot** — did
+  the plugin actually do anything, in this project or any other? It reads each
+  session's recorded hook output, keyed by tool call, never by searching the
+  transcript for text the agent may simply have quoted. Counts come with their
+  denominator, because "the gate never fired" and "the gate is not installed"
+  look identical until you know how many chances it had. The signal worth acting
+  on is neither count: it is a destructive call with **no** gate decision against
+  its id.
 - The generic scaffold only writes static files; it is not a runtime.
 - Either way, what gets wired is auto-grounding + a constitution skeleton. Full
   governance (decision log / snapshots / tracks) is **human-driven**: invoke
@@ -381,6 +389,11 @@ Claude Code;Codex 只做过轻量短任务,没有大型多会话项目,因此**�
   补齐字段解除阻断,人仍通过正常流程拍板——证据永远不是授权。
 - **`sh scripts/acgm-doctor.sh` 告诉你到底接上了什么**,并且拒绝宣称它证明不了的东西:
   它把"运行时激活"报为**子进程无法证明**,因为 doctor 观察不到调用它的那个会话。
+- **`python3 scripts/acgm_activity.py` 回答 doctor 回答不了的那个问题**——插件到底
+  干活了没有,在本项目、在别的项目。它读每个会话记录下来的 hook 输出,**以工具调用为键**,
+  绝不在 transcript 里搜文本(那可能只是 agent 自己引用过的字句)。所有计数都带分母,
+  因为**"门一次没响"和"插件没装上"在没有分母时长得一模一样**。真正值得追查的信号既不是
+  前者也不是后者:是**一条破坏性调用,却没有任何门裁决对上它的 id**。
 - 通用脚手架只写静态文件,不是运行时。
 - 两种方式接好的都是"自动 grounding + 宪法骨架"。完整治理(决策日志/快照/轨道)是
   **人驱动**的:调用 `governance-bootstrap` 或照 `METHODOLOGY.md` §12 手做。
