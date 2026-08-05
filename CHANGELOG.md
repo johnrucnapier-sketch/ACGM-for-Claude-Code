@@ -2,6 +2,23 @@
 
 Plugin id: `agent-coding-governance-methodology@agent-coding-governance-methodology`.
 
+## [0.4.2] — 2026-08-05
+
+### Fixed
+
+- **Discarding output is not writing.** The first real command after the gate
+  started denying was a read-only inspection of `~/.claude` — `ls`, `du`, `test`
+  — and it was blocked. The agent-config rule treats any `>` as a write, and
+  `2>/dev/null` contains one. Redirects to `/dev/null` and `2>&1` are now
+  stripped from the string used for matching, never from the command itself; a
+  write to a real path under the directory still carries its own `>` and is
+  still caught.
+
+  Worth stating plainly: this false positive appeared within one command of the
+  gate gaining real teeth. A gate that only *asks* can carry sloppy patterns
+  indefinitely, because nothing downstream depends on them being right. Denying
+  is what made the imprecision cost something.
+
 ## [0.4.1] — 2026-08-05
 
 ### Fixed

@@ -182,6 +182,33 @@ class GateTests(unittest.TestCase):
         out = self.run_gate("cat <<'EOF' > /tmp/note\nhello\nEOF\nrm -rf /tmp/target\n")
         self.assertAsks(out, "STANDALONE")
 
+    # -- discarding output is not writing --------------------------------
+
+    def test_read_only_inspection_of_agent_config_passes(self) -> None:
+        """First real use after the gate started denying, 2026-08-05.
+
+        `ls ~/.claude/... 2>/dev/null` was blocked: the agent-config rule treats
+        any '>' as a write, and a /dev/null redirect contains one.
+        """
+        for command in (
+            "ls ~/.claude/plugins",
+            "ls ~/.claude/plugins 2>/dev/null",
+            "du -sh ~/.claude/plugins >/dev/null",
+            "cat ~/.claude/settings.json 2>&1",
+        ):
+            with self.subTest(command=command):
+                self.assertPasses(self.run_gate(command))
+
+    def test_a_real_write_into_agent_config_is_still_caught(self) -> None:
+        """Stripping /dev/null must not become stripping every redirect."""
+        for command in (
+            "echo x > ~/.claude/settings.json",
+            "rm ~/.claude/settings.json",
+            "sed -i '' s/a/b/ ~/.claude/settings.json",
+        ):
+            with self.subTest(command=command):
+                self.assertAsks(self.run_gate(command), "FIELDS")
+
     # -- whitelist regressions ------------------------------------------
 
     def test_plugin_uninstall_is_gated(self) -> None:

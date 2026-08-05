@@ -66,6 +66,17 @@ scan=$(printf '%s\n' "$cmd" | awk '
   }
 ')
 
+# ---- Drop redirects that discard output ----
+# Observed 2026-08-05, first real use after the gate started denying: a read-only
+# inspection of ~/.claude (ls / du / test) was blocked, because the agent-config
+# rule below treats any '>' as a write and `2>/dev/null` contains one. Silencing
+# stderr is not a write; neither is `2>&1`. A write to a real path under the
+# directory still carries its own '>' and is still caught.
+scan=$(printf '%s\n' "$scan" | sed \
+  -e 's/[0-9]*>>*[[:space:]]*\/dev\/null//g' \
+  -e 's/&>[[:space:]]*\/dev\/null//g' \
+  -e 's/[0-9]*>&[0-9]//g')
+
 # ---- Cheap destructive filter (runs on every Bash; keep it POSIX case) ----
 is_destructive=0
 case "$scan" in
