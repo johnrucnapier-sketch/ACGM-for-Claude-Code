@@ -66,6 +66,13 @@ scan=$(printf '%s\n' "$cmd" | awk '
   }
 ')
 
+# ---- Drop whole-line comments ----
+# From v0.8 the four gate fields ride on the command as comment lines, so a field
+# describing a rollback ("reinstall with npm i -g x") would otherwise make a
+# harmless command look destructive. Only lines whose first non-space character is
+# '#' are removed, so a '#' inside a quoted argument is untouched.
+scan=$(printf '%s\n' "$scan" | sed -e '/^[[:space:]]*#/d')
+
 # ---- Drop redirects that discard output ----
 # Observed 2026-08-05, first real use after the gate started denying: a read-only
 # inspection of ~/.claude (ls / du / test) was blocked, because the agent-config

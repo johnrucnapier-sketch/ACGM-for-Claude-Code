@@ -167,9 +167,10 @@ For any other agent, take the generic scaffold and the principles and adapt them
   `PostToolUse` advises on governance-doc writes and changes nothing.
   `SessionEnd` reports post-action checks the session is walking away from.
   Skills are invoked by the Skill tool; they do not auto-fire.
-- **The gate checks structure, not wording.** It requires four named fields with
-  real content, the operation isolated in its own tool call (no `;`, `&&`, pipe,
-  or computed target), and a read-only call already present in the session. All
+- **The gate checks structure, not wording.** It requires four named fields carried as
+  comment lines **on the command itself**, the operation isolated in its own tool
+  call (no `;`, `&&`, pipe, or computed target), and a read-only call already
+  present in the session. All
   three are decided from the tool call and the transcript, so none can be
   produced by writing text. An incomplete gate is **denied**: a hook that only
   asks is routed through the session's permission mode, and an auto-accepting
@@ -492,7 +493,7 @@ Codex 的支持现在有自己的仓库,因为**两边的工作逻辑差异足�
   把破坏性 Bash 挡在一道结构门后;`PostToolUse` 对治理文档的写入给出提醒,**不改动
   任何文件**;`SessionEnd` 报告本次会话正在丢下的后验核验。skill 由 Skill 工具调用,
   不自动点火。
-- **门判结构,不判措辞。** 它要求:四个具名字段且有真实内容;操作独占一次工具调用
+- **门判结构,不判措辞。** 它要求:四个具名字段**写在命令自身的注释行里**;操作独占一次工具调用
   (不得有 `;`、`&&`、pipe 或被计算出的目标);本会话内此前已有只读调用。三条都从
   工具调用和 transcript 判定,**都不能靠写文字生产出来**。四项不全的门是**拒绝**:
   只会 `ask` 的 hook 要经过会话的权限模式,而自动接受的模式会让「问」变成空操作。

@@ -60,9 +60,9 @@ switch to:
 /acgm:truth-first
 ```
 
-Do the read-only source check in its own call first, then state the four fields
-immediately before the operation. They are evidence, not authorization: the
-human still decides, and the post-action check remains owed.
+Do the read-only source check in its own call first, then carry the four fields
+as comment lines on the command itself. They are evidence, not authorization:
+the human still decides, and the post-action check remains owed.
 
 ---
 
@@ -114,5 +114,5 @@ Session 内观察到的 hook 输出才是激活。
 /acgm:truth-first
 ```
 
-先用独立调用做只读取证,再在紧邻操作之前写出四个字段。它们是证据,不是授权:人仍然
-要拍板,后验核验义务也仍然欠着。
+先用独立调用做只读取证,再把四个字段作为**命令自身的注释行**带上。它们是证据,不是
+授权:人仍然要拍板,后验核验义务也仍然欠着。

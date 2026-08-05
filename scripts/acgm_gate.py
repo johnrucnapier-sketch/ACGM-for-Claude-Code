@@ -131,18 +131,38 @@ def recent_tool_uses(path: str, limit: int) -> list[tuple[str, str]]:
     return calls[-limit:]
 
 
-def missing_fields(text: str) -> list[str]:
+FIELD_COMMENT = re.compile(r"^\s*#\s*(ACGM-[A-Z-]+)\s*[:：]\s*(.*)$")
+
+
+def split_command(command: str) -> tuple[str, str]:
+    """Separate the ACGM field comments from the operation itself.
+
+    The fields live in the command from v0.8. They used to be read from the
+    agent's most recent message, which put the check on the wrong side of a race:
+    the transcript is not always flushed when the hook runs, so identical calls
+    were sometimes accepted and sometimes denied for "missing fields" (E-027).
+    Worse, a stale read surfaced an *earlier* turn's fields and authorised an
+    operation they were never written for (E-025).
+
+    The command is the one thing the hook always receives intact, and it is the
+    thing being authorised. Fields carried on it cannot be stale, cannot be
+    missing due to timing, and cannot belong to a different call.
+    """
+    fields, rest = [], []
+    for line in command.splitlines():
+        (fields if FIELD_COMMENT.match(line) else rest).append(line)
+    return "\n".join(fields), "\n".join(rest)
+
+
+def missing_fields(field_block: str) -> list[str]:
+    present = {}
+    for line in field_block.splitlines():
+        match = FIELD_COMMENT.match(line)
+        if match:
+            present[match.group(1)] = match.group(2).strip().strip("`").strip()
     absent = []
     for field in FIELDS:
-        match = re.search(
-            rf"{re.escape(field)}\s*[:：]\s*(.*?)(?=\n\s*ACGM-[A-Z-]+\s*[:：]|\n\s*```|\Z)",
-            text,
-            re.DOTALL,
-        )
-        if not match:
-            absent.append(field)
-            continue
-        value = match.group(1).strip().strip("`").strip()
+        value = present.get(field, "")
         if len(value) < MIN_FIELD_CHARS or PLACEHOLDER.match(value):
             absent.append(field)
     return absent
@@ -334,10 +354,11 @@ def main() -> None:
 
     command = (payload.get("tool_input") or {}).get("command", "")
     transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    field_block, operation = split_command(command)
 
     problems: list[str] = []
 
-    segments = operative_segments(command)
+    segments = operative_segments(operation)
     if len(segments) > 1:
         problems.append(
             "STANDALONE — this invocation runs %d operations in one call:\n    %s\n"
@@ -352,21 +373,20 @@ def main() -> None:
             "    read-only call first, then pass the literal value."
         )
 
-    text = last_assistant_text(transcript) if transcript else ""
-    absent = missing_fields(text)
+    absent = missing_fields(field_block)
     if absent:
         problems.append(
             "FIELDS — missing or placeholder: %s\n"
-            "    Each field needs current-session content, not a template and not\n"
-            "    a claim inherited from a summary." % ", ".join(absent)
+            "    Put them in the command itself, as comment lines above the\n"
+            "    operation. Each needs real content, not a template." % ", ".join(absent)
         )
-    elif not fields_name_this_target(text, command):
+    elif not fields_name_this_target(field_block, operation):
         problems.append(
-            "BINDING — the four fields do not name anything this command acts on:\n"
+            "BINDING — the fields do not name anything this command acts on:\n"
             "    %s\n"
-            "    Fields written for a previous operation stay the most recent text\n"
-            "    and would otherwise license this one. Name the actual target."
-            % ", ".join(sorted(set(target_tokens(command)))[:6])
+            "    Fields copied from a previous operation would otherwise license\n"
+            "    this one. Name the actual target."
+            % ", ".join(sorted(set(target_tokens(operation)))[:6])
         )
 
     if transcript:
@@ -397,13 +417,15 @@ def main() -> None:
         "deny",
         "ACGM gate — destructive operation blocked.\n\n"
         + "\n\n".join(f"  {index}. {problem}" for index, problem in enumerate(problems, 1))
-        + "\n\nBefore retrying, state these four fields immediately above the call:\n\n"
-        "    ACGM-EVIDENCE:      primary source establishing each target identifier\n"
-        "    ACGM-CURRENT-STATE: the target's state, read in this session\n"
-        "    ACGM-VERIFY-AFTER:  the specific post-action check and its success signal\n"
-        "    ACGM-ROLLBACK:      recovery if the target or the result is wrong\n\n"
-        "Supplying the four fields lifts this block; it does not authorize the\n"
-        "operation. The completed gate then goes to the human as usual.",
+        + "\n\nRetry with the four fields as comment lines in the command itself:\n\n"
+        "    # ACGM-EVIDENCE: primary source establishing each target identifier\n"
+        "    # ACGM-CURRENT-STATE: the target's state, read in this session\n"
+        "    # ACGM-VERIFY-AFTER: the post-action check and its success signal\n"
+        "    # ACGM-ROLLBACK: recovery if the target or the result is wrong\n"
+        "    <the operation, on its own line>\n\n"
+        "They travel with the operation they authorise, so they cannot be stale and\n"
+        "cannot belong to a different call. Supplying them lifts this block; it does\n"
+        "not authorize the operation, which still goes to the human as usual.",
     )
 
 

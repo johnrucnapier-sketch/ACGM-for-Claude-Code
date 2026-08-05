@@ -4,6 +4,37 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.8.0] — 2026-08-05
+
+### Changed — breaking
+
+- **The four fields now ride on the command, as comment lines.** They used to be
+  read from the agent's most recent message, which put the check on the wrong side
+  of a race (E-027): identical calls were sometimes accepted and sometimes denied
+  for missing fields, and a stale read could surface an *earlier* operation's
+  fields and authorise something they were never written for (E-025).
+
+  ```bash
+  # ACGM-EVIDENCE: ls -d /Applications/Foo.app confirmed the bundle exists
+  # ACGM-CURRENT-STATE: not running; no matching process
+  # ACGM-VERIFY-AFTER: ls -d must report no such file
+  # ACGM-ROLLBACK: reinstall from the 300110 build
+  rm -rf /Applications/Foo.app
+  ```
+
+  The command is the one thing the hook always receives intact, and it is the
+  thing being authorised. Fields carried on it cannot be stale, cannot go missing
+  on timing, and cannot license a different call. **Nothing about approval
+  changes** — an incomplete gate is still denied and the agent retries; a complete
+  one still emits no decision and goes to the normal permission flow. The only
+  visible difference is four comment lines above the operation.
+
+- The shell filter skips whole-line comments, so a rollback plan that names a
+  destructive command no longer makes a harmless command look destructive.
+- The transcript is still read for the EVIDENCE check, which is unavoidable — it
+  asks whether a read-only call happened. That check can only fail *closed* under
+  the same race, costing one retry, never a false pass.
+
 ## [0.7.0] — 2026-08-05
 
 ### Added

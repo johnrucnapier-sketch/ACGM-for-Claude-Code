@@ -21,29 +21,27 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 HOOK = REPO / "scripts" / "pretool-destructive-bash.sh"
 
-FIELDS_OK = """Here is what I found.
-
-ACGM-EVIDENCE: `claude plugin list` in this session listed the plugin id
-ACGM-CURRENT-STATE: installed at user scope, version 0.1.0, status enabled
-ACGM-VERIFY-AFTER: rerun `claude plugin list`; the id must be absent
-ACGM-ROLLBACK: `claude plugin install <id>`; the marketplace stays registered
+# From v0.8 the fields ride on the command itself, as comment lines. They are
+# prepended to the operation rather than written in a separate message.
+FIELDS_OK = """# ACGM-EVIDENCE: claude plugin list in this session listed the plugin id
+# ACGM-CURRENT-STATE: installed at user scope, version 0.1.0, status enabled
+# ACGM-VERIFY-AFTER: rerun claude plugin list; the id must be absent
+# ACGM-ROLLBACK: claude plugin install the id; the marketplace stays registered
 """
 
 # Fields that name the scratch directory, so they satisfy BINDING for commands
 # acting on it. FIELDS_OK deliberately does not — it describes a plugin install,
 # and reusing it against a path is exactly the false pass BINDING exists to stop.
-FIELDS_SCRATCH = """
-ACGM-EVIDENCE: `ls -la /tmp/acgm-scratch` in this session listed its contents
-ACGM-CURRENT-STATE: /tmp/acgm-scratch holds only generated files, nothing tracked
-ACGM-VERIFY-AFTER: `ls /tmp/acgm-scratch` must report no such file or directory
-ACGM-ROLLBACK: the contents are reproduced by rerunning the step that wrote them
+FIELDS_SCRATCH = """# ACGM-EVIDENCE: ls -la /tmp/acgm-scratch in this session listed its contents
+# ACGM-CURRENT-STATE: /tmp/acgm-scratch holds only generated files, nothing tracked
+# ACGM-VERIFY-AFTER: ls /tmp/acgm-scratch must report no such file or directory
+# ACGM-ROLLBACK: the contents are reproduced by rerunning the step that wrote them
 """
 
-FIELDS_PLACEHOLDER = """
-ACGM-EVIDENCE: <tool output establishing the target>
-ACGM-CURRENT-STATE: TBD
-ACGM-VERIFY-AFTER: 待定
-ACGM-ROLLBACK: n/a
+FIELDS_PLACEHOLDER = """# ACGM-EVIDENCE: <tool output establishing the target>
+# ACGM-CURRENT-STATE: TBD
+# ACGM-VERIFY-AFTER: 待定
+# ACGM-ROLLBACK: n/a
 """
 
 
@@ -73,15 +71,21 @@ def transcript(tmp: Path, assistant_text: str, tool_calls: list[tuple[str, str]]
 
 
 class GateTests(unittest.TestCase):
-    def run_gate(self, command: str, assistant_text: str = "", calls=None) -> dict:
+    def run_gate(self, command: str, fields: str = "", calls=None) -> dict:
+        """Fields are prepended to the command, which is where the gate reads them.
+
+        Before v0.8 they were passed as the preceding assistant message; that put
+        the check behind a transcript-flush race (E-027).
+        """
+        full = f"{fields.rstrip()}\n{command}" if fields.strip() else command
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             calls = list(calls or [])
-            calls.append(("Bash", command))
+            calls.append(("Bash", full))
             payload = {
                 "tool_name": "Bash",
-                "tool_input": {"command": command},
-                "transcript_path": transcript(tmp, assistant_text, calls),
+                "tool_input": {"command": full},
+                "transcript_path": transcript(tmp, "", calls),
             }
             # Hermetic: PATH only, nothing inherited.
             result = subprocess.run(
@@ -130,7 +134,7 @@ class GateTests(unittest.TestCase):
     # -- FIELDS ----------------------------------------------------------
 
     def test_destructive_without_fields_is_held(self) -> None:
-        out = self.run_gate("rm -rf /tmp/x", "Deleting the scratch directory now.")
+        out = self.run_gate("rm -rf /tmp/x", "# Deleting the scratch directory now.")
         reason = self.assertAsks(out, "FIELDS")
         for field in ("ACGM-EVIDENCE", "ACGM-ROLLBACK"):
             self.assertIn(field, reason)
@@ -143,8 +147,47 @@ class GateTests(unittest.TestCase):
 
     def test_literal_abcd_markers_no_longer_satisfy_the_gate(self) -> None:
         """The v0.1 bypass: four characters used to be enough."""
-        out = self.run_gate("rm -rf /tmp/x", "(a) (b) (c) (d)", calls=[("Bash", "ls /tmp")])
+        out = self.run_gate("rm -rf /tmp/x", "# (a) (b) (c) (d)", calls=[("Bash", "ls /tmp")])
         self.assertAsks(out, "FIELDS")
+
+    def test_fields_are_read_with_no_assistant_text_in_the_transcript(self) -> None:
+        """The race is gone because the transcript is no longer consulted for them.
+
+        Every test here already runs with an empty assistant message; this one
+        says so on purpose. Before v0.8 the fields lived in that message, and an
+        unflushed transcript denied identical calls at random (E-027).
+        """
+        full = FIELDS_SCRATCH + "rm -rf /tmp/acgm-scratch"
+        with tempfile.TemporaryDirectory() as directory:
+            payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": full},
+                # The evidence check looks behind the call being gated, so the
+                # call itself has to be the last entry.
+                "transcript_path": transcript(
+                    Path(directory),
+                    "",
+                    [("Bash", "ls -la /tmp/acgm-scratch"), ("Bash", full)],
+                ),
+            }
+            result = subprocess.run(
+                ["sh", str(HOOK)],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
+                check=False,
+            )
+        self.assertEqual(json.loads(result.stdout or "{}"), {})
+
+    def test_a_field_comment_does_not_make_a_command_look_destructive(self) -> None:
+        """A rollback plan may name a destructive command without being one."""
+        self.assertPasses(
+            self.run_gate(
+                "git status --short",
+                "# ACGM-ROLLBACK: reinstall with npm i -g some-package if this goes wrong\n",
+            )
+        )
 
     # -- BINDING: fields must name THIS target ---------------------------
 
@@ -165,10 +208,10 @@ class GateTests(unittest.TestCase):
 
     def test_fields_naming_the_target_satisfy_the_binding(self) -> None:
         fields = (
-            "ACGM-EVIDENCE: `ls -la /tmp/acgm-scratch` in this session listed the directory\n"
-            "ACGM-CURRENT-STATE: /tmp/acgm-scratch holds 3 generated files, nothing tracked\n"
-            "ACGM-VERIFY-AFTER: `ls /tmp/acgm-scratch` must report no such file\n"
-            "ACGM-ROLLBACK: the contents are regenerated by rerunning the build step\n"
+            "# ACGM-EVIDENCE: ls -la /tmp/acgm-scratch in this session listed the directory\n"
+            "# ACGM-CURRENT-STATE: /tmp/acgm-scratch holds 3 generated files, nothing tracked\n"
+            "# ACGM-VERIFY-AFTER: ls /tmp/acgm-scratch must report no such file\n"
+            "# ACGM-ROLLBACK: the contents are regenerated by rerunning the build step\n"
         )
         out = self.run_gate(
             "rm -rf /tmp/acgm-scratch", fields, calls=[("Bash", "ls -la /tmp/acgm-scratch")]
@@ -177,10 +220,10 @@ class GateTests(unittest.TestCase):
 
     def test_a_basename_counts_as_naming_the_target(self) -> None:
         fields = (
-            "ACGM-EVIDENCE: `claude plugin list` showed the plugin registered at user scope\n"
-            "ACGM-CURRENT-STATE: acgm@acgm is installed at version 0.6.0 and enabled\n"
-            "ACGM-VERIFY-AFTER: `claude plugin list` must no longer show acgm@acgm\n"
-            "ACGM-ROLLBACK: reinstall from the marketplace, which stays registered\n"
+            "# ACGM-EVIDENCE: claude plugin list showed the plugin registered at user scope\n"
+            "# ACGM-CURRENT-STATE: acgm@acgm is installed at version 0.6.0 and enabled\n"
+            "# ACGM-VERIFY-AFTER: claude plugin list must no longer show acgm@acgm\n"
+            "# ACGM-ROLLBACK: reinstall from the marketplace, which stays registered\n"
         )
         out = self.run_gate(
             "claude plugin uninstall acgm@acgm", fields, calls=[("Bash", "claude plugin list")]

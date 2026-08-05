@@ -40,15 +40,24 @@ Before an irreversible, destructive or state-changing operation, three condition
 must hold. They are checked structurally, from the tool call and the transcript,
 because prose can be produced without evidence and structure cannot.
 
-**1 · FIELDS** — state all four immediately before the call, each with real
-content. Templates, `TBD`, `n/a`, `待定` and inherited claims do not count:
+**1 · FIELDS** — write all four **as comment lines in the command itself**, each
+with real content. Templates, `TBD`, `n/a`, `待定` and inherited claims do not
+count:
 
-```text
-ACGM-EVIDENCE:      primary source establishing each target identifier
-ACGM-CURRENT-STATE: the target's state, observed now
-ACGM-VERIFY-AFTER:  the specific post-action check and its success signal
-ACGM-ROLLBACK:      recovery if the target or the result is wrong
+```bash
+# ACGM-EVIDENCE: primary source establishing each target identifier
+# ACGM-CURRENT-STATE: the target's state, observed now
+# ACGM-VERIFY-AFTER: the post-action check and its success signal
+# ACGM-ROLLBACK: recovery if the target or the result is wrong
+rm -rf /the/actual/target
 ```
+
+They ride on the command because that is the only place they cannot go wrong.
+Read from the surrounding conversation, the same fields were sometimes invisible
+when the record had not been written yet, and sometimes belonged to an *earlier*
+operation that had nothing to do with this one. Carried on the command, they
+cannot be stale, cannot be missing due to timing, and cannot authorise a
+different call.
 
 **2 · STANDALONE** — the operation runs in its own tool call. Do not bind it to
 other work with `;`, `&&`, `||`, a pipe, a redirection or a subshell, and do not
@@ -114,15 +123,20 @@ PostToolUse advisory 可能标记治理文档的写入。它不会改文件,而�
 不可逆、破坏性或状态变更操作前,三个条件必须成立。它们从工具调用和 transcript 做
 **结构判定**,因为文字可以在没有证据的情况下写出来,结构不能。
 
-**1 · FIELDS** —— 紧邻操作之前写出四个字段,各自要有真实内容。模板、`TBD`、`n/a`、
-"待定"和从摘要继承的说法都不算:
+**1 · FIELDS** —— 把四个字段**写成命令自身的注释行**,各自要有真实内容。模板、`TBD`、
+`n/a`、"待定"和从摘要继承的说法都不算:
 
-```text
-ACGM-EVIDENCE:      建立每个目标标识符的一手来源
-ACGM-CURRENT-STATE: 刚刚观察到的目标当前状态
-ACGM-VERIFY-AFTER:  具体的后验检查命令与成功信号
-ACGM-ROLLBACK:      目标或结果错误时的恢复方案
+```bash
+# ACGM-EVIDENCE: 建立每个目标标识符的一手来源
+# ACGM-CURRENT-STATE: 刚刚观察到的目标当前状态
+# ACGM-VERIFY-AFTER: 后验检查命令与成功信号
+# ACGM-ROLLBACK: 目标或结果错误时的恢复方案
+rm -rf /真正的/目标
 ```
+
+它们必须**长在命令上**,因为那是唯一不会出错的位置。从上下文里读取时,同样这几个字段
+有时因为记录还没落盘而"不存在",有时读到的是**更早那次操作**的字段——和当前这条命令
+毫无关系。写在命令上,它们不可能陈旧、不可能因时序而缺失、也不可能去授权另一条命令。
 
 **2 · STANDALONE** —— 操作独占一次工具调用。不得用 `;`、`&&`、`||`、pipe、重定向或
 subshell 把它和其他工作绑在一起,也不得用命令替换计算它的目标。取证、状态变更、核验
