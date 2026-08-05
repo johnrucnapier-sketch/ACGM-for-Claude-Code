@@ -35,6 +35,13 @@ line is left as written rather than rewritten to match the present.
   asks whether a read-only call happened. That check can only fail *closed* under
   the same race, costing one retry, never a false pass.
 
+### Verified in a live session
+
+Claimed fixed and then checked, in that order. On v0.6.1 the install of this very
+release needed three attempts before its fields were seen. On v0.8.0 the gate
+denied a bare `rm -rf`, printed the new format, and accepted the identical command
+carrying the four fields as comments — first try, no prompt, no retry.
+
 ## [0.7.0] — 2026-08-05
 
 ### Added
