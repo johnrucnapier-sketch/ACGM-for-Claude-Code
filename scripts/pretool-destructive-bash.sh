@@ -43,9 +43,32 @@ tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null || tr
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -n "$cmd" ] || { echo '{}'; exit 0; }
 
+# ---- Strip heredoc bodies before matching ----
+# Observed 2026-08-05: a `git commit -F -` whose message *described* a recursive
+# delete tripped the filter, twice. Heredoc content is data the command writes,
+# not an operation it performs, so matching it is a pure false positive.
+#
+# Bodies only. The `<<TAG` line itself stays, so a destructive command that also
+# feeds a heredoc is still caught -- dropping everything after `<<` would trade a
+# false positive for a false negative, which is the worse error here.
+scan=$(printf '%s\n' "$cmd" | awk '
+  /^[[:space:]]*$/ && skip { print; next }
+  skip { if ($0 == term) { skip = 0 }; next }
+  {
+    print
+    line = $0
+    if (match(line, /<<-?[[:space:]]*['"'"'"]?[A-Za-z_][A-Za-z0-9_]*['"'"'"]?/)) {
+      tag = substr(line, RSTART, RLENGTH)
+      gsub(/^<<-?[[:space:]]*|['"'"'"]/, "", tag)
+      term = tag
+      skip = 1
+    }
+  }
+')
+
 # ---- Cheap destructive filter (runs on every Bash; keep it POSIX case) ----
 is_destructive=0
-case "$cmd" in
+case "$scan" in
   # filesystem
   *"rm -rf"*|*"rm -fr"*|*"rm -r "*|*"rm --recursive"*|*"rm -f "*|*"shred "*|*"rmdir "*) is_destructive=1 ;;
   # git history / working tree
@@ -58,7 +81,7 @@ case "$cmd" in
   *"npm i -g"*|*"npm install -g"*|*"npm uninstall -g"*|*"npm rm -g"*) is_destructive=1 ;;
   *"pip install"*|*"pip uninstall"*|*"brew install"*|*"brew uninstall"*|*"brew upgrade"*) is_destructive=1 ;;
   # agent-owned configuration
-  *"/.claude/"*) case "$cmd" in *">"*|*"rm "*|*"mv "*|*"cp "*|*"tee "*|*"sed -i"*) is_destructive=1 ;; esac ;;
+  *"/.claude/"*) case "$scan" in *">"*|*"rm "*|*"mv "*|*"cp "*|*"tee "*|*"sed -i"*) is_destructive=1 ;; esac ;;
   # service / system
   *"systemctl stop"*|*"systemctl start"*|*"systemctl disable"*|*"systemctl enable"*) is_destructive=1 ;;
   *"systemctl mask"*|*"systemctl restart"*|*"systemctl reload"*|*"launchctl "*) is_destructive=1 ;;

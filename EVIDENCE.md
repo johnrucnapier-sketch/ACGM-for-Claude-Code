@@ -35,6 +35,8 @@ note, never rewrite away the earlier judgment.
 | E-018 | Test volume is not coverage | **Observed** (2026-08-05) | the 0.3.0-rc line: ~4400 lines of tests, an 8-check release contract and a 3-OS matrix, none of which invoked `claude plugin validate` or attempted an install; ~3670 lines of installer were written to solve a two-character manifest bug | one project, one release line; stated as a caution, not a law |
 | E-019 | A governance mechanism that edits the artifact it governs is itself an unlogged state change | **Observed** (2026-08-05) | Case 12 — the PostToolUse hook appended a marker into a CLAUDE.md on a false positive, while the skill text promised it did not edit files | corrected by making the response an advisory; the detector stays coarse on purpose |
 | E-020 | A test suite that reads the process environment inside the code under test passes in CI and fails on real machines | **Reproduced** (2026-08-05) | the 0.3.0-rc suite: 2 failures locally, 156/156 with `CLAUDECODE` unset; CI never runs inside Claude Code so it was always green | v0.4 runs its suite with the variable both set and unset |
+| E-021 | A gate keyed on the command string is a speed bump, and rewards learning nothing | **Observed** (2026-08-05) | a third-party pre-execution gate, read at source: it denies once per `sha256(command)` and allows the identical command on retry. Its own message demands three facts; **no code path reads them**. Improving the command produces a new hash and is blocked again, so resubmitting unchanged is the cheapest route | states the general shape ACGM must avoid; ACGM's own v0.1 gate was a weaker instance of it (E-014) |
+| E-022 | Substring matching over a whole Bash invocation misfires on data the command carries | **Reproduced** (2026-08-05) | a commit message *describing* a recursive delete tripped two independent gates, twice each; the heredoc body is text being written, not an operation | v0.4 strips heredoc bodies before matching and keeps the `<<TAG` line, so a destructive command that also feeds a heredoc is still caught |
 
 ## Release review
 
@@ -85,6 +87,8 @@ Predictive 的强形式。状态变更只追加:加一条带日期的说明,**�
 | E-018 | 测试的体量不是覆盖率 | **Observed**(2026-08-05) | 0.3.0-rc 线:约 4400 行测试、8 项发布契约、3 操作系统矩阵,无一调用 `claude plugin validate` 或尝试安装;为一个两字符的 manifest bug 写了约 3670 行安装器 | 单项目单发布线;作为告诫,不作定律 |
 | E-019 | 会修改被治理对象的治理机制,本身就是一次未记录的状态变更 | **Observed**(2026-08-05) | 案例 12——PostToolUse hook 在一次误报上往 CLAUDE.md 追加了标记,而 skill 正文声称它不改文件 | 已改为只给 advisory;检测器**故意保持粗糙** |
 | E-020 | 在被测代码内部读进程环境的测试套件,会 CI 全绿、真机报错 | **Reproduced**(2026-08-05) | 0.3.0-rc 套件:本机 2 项失败,`CLAUDECODE` 清掉后 156/156;CI 永远不在 Claude Code 里跑,所以一直是绿的 | v0.4 的套件在该变量设与不设两种情况下各跑一次 |
+| E-021 | 以命令字符串为键的门只是减速带,而且奖励"什么都没学到" | **Observed**(2026-08-05) | 读了某第三方执行前门的源码:它按 `sha256(命令)` 只拒一次,同样的命令重交即放行。它的提示要求三项事实,**代码里没有任何一处读取它们**。改进命令会产生新哈希、再次被拒,于是**原样重交是最省事的路径** | 这条描述的是 ACGM 必须避免的一般形态;ACGM 自己 v0.1 的门是它的弱化版(E-014) |
+| E-022 | 对整条 Bash 调用做子串匹配,会被命令携带的数据误伤 | **Reproduced**(2026-08-05) | 一条**描述**递归删除的 commit message 触发了两道独立的门、各两次;heredoc 正文是被写入的文本,不是被执行的操作 | v0.4 在匹配前剥离 heredoc 正文并保留 `<<TAG` 行,因此"既执行破坏性操作又带 heredoc"的命令仍会被抓住 |
 
 ## 发布复核
 

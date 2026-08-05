@@ -3,3 +3,8 @@ docs/superpowers/
 .DS_Store
 BUILD_BRIEF.md
 PUBLISHING.md
+
+# Python bytecode — a directory-source plugin cache syncs the working tree, so
+# anything left here ships into the installed plugin (EVIDENCE E-016).
+__pycache__/
+*.py[cod]

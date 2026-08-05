@@ -159,6 +159,22 @@ class GateTests(unittest.TestCase):
         out = self.run_gate("rm -rf /tmp/x", FIELDS_OK, calls=[("Bash", "rm -rf /tmp/y")])
         self.assertAsks(out, "EVIDENCE")
 
+    # -- heredoc bodies are data, not operations -------------------------
+
+    def test_heredoc_body_mentioning_a_delete_does_not_trip_the_filter(self) -> None:
+        """Observed 2026-08-05: a commit message describing a recursive delete
+        tripped a substring filter twice. The body is text the command writes."""
+        message = "fixed a bug where rm -rf ran on the wrong path"
+        self.assertPasses(self.run_gate(f"git commit -F - <<'MSG'\n{message}\nMSG\n"))
+
+    def test_a_real_delete_after_a_heredoc_is_still_caught(self) -> None:
+        """Stripping bodies must not become stripping everything after '<<'.
+
+        A false negative here is worse than the false positive it replaces.
+        """
+        out = self.run_gate("cat <<'EOF' > /tmp/note\nhello\nEOF\nrm -rf /tmp/target\n")
+        self.assertAsks(out, "STANDALONE")
+
     # -- whitelist regressions ------------------------------------------
 
     def test_plugin_uninstall_is_gated(self) -> None:
