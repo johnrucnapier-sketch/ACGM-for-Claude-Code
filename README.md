@@ -1,6 +1,6 @@
-# Agent Coding Governance
+# ACGM for Claude Code
 
-**A governance system for multi-session, long-horizon AI development — built and validated on Claude Code.**
+**Agent Coding Governance Methodology — a governance system for multi-session, long-horizon AI development, built and validated on Claude Code.**
 
 [![Code: MIT](https://img.shields.io/badge/code-MIT-green.svg)](LICENSING.md) [![Docs: CC--BY--4.0](https://img.shields.io/badge/docs-CC--BY--4.0-blue.svg)](LICENSING.md) [![Dual-license](https://img.shields.io/badge/license-dual--track-lightgrey.svg)](LICENSING.md)
 

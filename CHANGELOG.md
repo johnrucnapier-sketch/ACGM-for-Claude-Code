@@ -125,7 +125,10 @@ line is left as written rather than rewritten to match the present.
 
 Rebuilt from the v0.1 skeleton. The 0.3.0-rc line is not an ancestor of this
 release: its wording improvements were carried over deliberately, its Python
-runtime and installer were not. Those remain available at tag `v0.3.0-rc.4`.
+runtime and installer were not. That line is preserved at tag `v0.3.0-rc.4` in the
+archived predecessor repository, `johnrucnapier-sketch/Agent-Coding-Governance-Methodology`,
+along with the v0.1 history that CASES Case 10 cites as its evidence. It is not
+carried into this repository, and it is not deleted either.
 
 ### Fixed
 
