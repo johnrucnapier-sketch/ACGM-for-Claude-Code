@@ -54,6 +54,13 @@ line is left as written rather than rewritten to match the present.
 
 ### Changed
 
+- **README rewritten around both halves of the problem.** The old text described a
+  governance system; the purpose has not changed, but a second half is now stated
+  plainly — governing a project while it runs, and leaving a record that survives
+  the day it stops. Adds the ledger, the pairing with Claude Code Recover (with the
+  unbuilt half of that pairing named as unbuilt), and replaces the incident-count
+  section with a **mechanism table**: what each part was designed to intercept, what
+  it has been observed intercepting, and what it cannot intercept.
 - `templates/ADR._TEMPLATE.md` gains `From:`, `Confirmed by:`, `Shareable:` and
   `At commit:`. New `templates/CLAIM._TEMPLATE.md`.
 - `governance-bootstrap` step 3 now creates the full `.governance/` layout by
