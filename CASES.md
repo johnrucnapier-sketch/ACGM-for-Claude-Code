@@ -39,6 +39,8 @@ note on rates.
 | 12 | A gate satisfied by four characters, while the real irreversible op passed | ① | reading the gate's own source |
 | 13 | Three versions installed, running from a deleted binary | ② | `CLAUDE_CODE_EXECPATH` vs. disk |
 | 14 | ~10 parallel work streams, drift cleared, then nothing dramatic ever again | ② at scale | project-internal audit rounds |
+| 15 | Three months of reasoning swept off the disk by a default nobody had read | ③ | reading the store instead of reasoning about it |
+| 16 | The gate blocked its own release three times, for a reason it was not giving | ② ×2 | running the gate's own function on the real transcript |
 
 ---
 
@@ -453,6 +455,110 @@ anywhere in this repository (EVIDENCE E-026).
 
 ---
 
+### Case 15 — Three months of reasoning swept off the disk by a default nobody had read (③)
+
+**Situation.** August 2026. An operator who had lost an account earlier in the
+year was designing a layer that would leave more governance traces behind, so
+that a future loss would cost less. The working assumption — never stated, never
+checked — was that the agent CLI's local session store is a durable record, and
+that the job was only to write *more* into it.
+
+**The drift.** This is ③ in its quietest form: the traces the project depended on
+were living somewhere that was never the project's to keep. Nothing was
+misfiled and nothing was overwritten; the store simply was not a store. The
+methodology's own "live handoff" layer had a written specification and, on
+inspection, zero instances anywhere — a spec with no mechanism produces no
+artifacts, and nobody notices until the artifacts are needed.
+
+**Correction.** The question "does this expire?" was answered by reading the
+disk rather than reasoning about it:
+
+1. Enumerate the store: roughly seventy transcript files, oldest 33 days, and
+   nothing at all from the three months of use preceding that.
+2. Rule out a disk-wide event: a sibling directory under the same root still
+   held files 100 days old, so the deletion was selective, not general.
+3. Establish the mechanism from the vendor's own documentation — a retention
+   setting, defaulting to 30 days, applied at startup.
+
+Step 3 needed a second attempt. The first search for the setting matched **the
+agent's own words in the current session's transcript** — the store being
+searched contained the search. Self-citation reads exactly like corroboration
+and is worth nothing; only an independent source settled it.
+
+**Fix.** Two changes, and only the second one is governance. The retention window
+was raised, which stops the bleeding. The root cause is that governance traces
+were being kept in vendor storage at all: the durable carrier is the project's
+own repository, where the project's history already keeps them.
+
+**If uncaught.** Every recorded rationale older than the window disappears while
+the project is still running, and the loss is silent — nothing fails, nothing
+warns, the files are simply absent the next time anyone looks. The operator had
+already paid this once: what was actually lost with the account was not code,
+which was in Git, but the reasoning behind it, which was not.
+
+---
+
+### Case 16 — The gate blocked its own release three times, for a reason it was not giving (② twice)
+
+**Situation.** August 2026. A new version of this plugin was ready and the
+operator asked for it to be installed before committing, so that "it works" would
+mean a session had actually run it. Installing a plugin is a state change, so the
+install went through this repository's own gate.
+
+**What happened.** The gate denied it. Three times, with fields correctly carried
+on the command and a read-only inspection immediately before each attempt. The
+stated reason was `EVIDENCE — no read-only tool call precedes this one`, which was
+false: one had, every time.
+
+**The drift, first instance — in the gate.** `has_prior_evidence` opened with the
+comment *"the final entry is the destructive call being gated; look behind it"*
+and sliced it off. That comment is an assertion about the runtime, and it had
+never been checked against the runtime. PreToolUse fires **before** the call is
+written to the transcript, so the final entry is usually the *previous* call —
+the very inspection that constitutes the evidence. The check was discarding the
+best evidence available and then reporting that none existed.
+
+Two further defects surfaced in the same sitting:
+
+- The read-only pattern is anchored, so applied to a whole invocation it asks
+  whether the command *begins* with a read-only verb. `cd repo && git status` —
+  the ordinary shape of an inspection — never matched.
+- Separators were split inside quoted arguments, so one `python3 -c "…"` was
+  counted as twenty-two operations. `STANDALONE` then had **no satisfiable
+  form**: no way of writing that command could pass.
+
+**The drift, second instance — in the diagnosis.** The first explanation offered
+was a transcript-flush race; the second was the anchored pattern. Both were
+stated with confidence and both were wrong, and each was consistent with part of
+the evidence, which is what made them attractive. The question was settled only
+by loading the gate's own module and running `has_prior_evidence` against the
+live transcript — where it returned `True`, proving the check could see the
+evidence *afterwards* but not at the moment it fired.
+
+**Why it survived so long.** The test fixture built the transcript by appending
+the gated call to it. Every test therefore ran against a transcript more complete
+than the one the hook receives in production, so the slice was always correct in
+tests and never correct in use. This is E-020's shape in a new place: a harness
+that supplies more than the runtime does cannot fail on the thing it exists to
+catch.
+
+**Fix.** Drop the last entry only when it really is the command being gated.
+Classify a Bash call by its operative segments rather than its opening verb, and
+require every segment to be read-only, so a mutation smuggled after an inspection
+still fails. Split separators only outside quotes. Three regression tests, one of
+which deliberately omits the gated call from the transcript.
+
+**If uncaught.** Nothing unsafe: every one of these is a false denial, and the
+gate fails closed. The damage is to its standing. A gate that repeatedly refuses
+correct work — and, in the `STANDALONE` case, states a requirement that cannot be
+met — teaches its operator that routing around it is cheaper than satisfying it.
+That is the failure mode already recorded as E-021 against someone else's gate,
+reappearing here against this one. Five firings in one session, four of them
+false, is exactly the "design smell" threshold this methodology sets for itself
+in Meta-observation 2.
+
+---
+
 ## How it adds up
 
 | Case | Trigger | Key action |
@@ -466,6 +572,13 @@ anywhere in this repository (EVIDENCE E-026).
 | 7 | pre-merge full scan | external plan vs. whole repo → intercept before landing |
 | 8 | grounding worktree/branch check | shared dir + branch switch → caught before governance lands on the wrong branch |
 | 9 | external human audit | norms extended at normative + mechanism layers; 2-independent-evidence rule added to prevent incident over-fitting |
+| 10 | official validator, run for the first time | published manifest → no clean install could load it → make CI attempt a real install, not only validation |
+| 11 | raw hook stdout in the transcript | two gates fired on one call → attribute by mechanism output keyed to the tool call, never by grepping transcript text |
+| 12 | reading the gate's own source | four characters satisfied a text check → replace the text check with a structural one |
+| 13 | running path vs. disk | three versions installed, the live binary unlinked → compare the running path against the disk, not a version string |
+| 14 | project-internal audit rounds | rot cleared once, then quiet → report a trigger count only with its denominator |
+| 15 | reading the store instead of reasoning about it | a store believed durable → enumerate it, rule out a disk-wide event, confirm the mechanism from an independent source |
+| 16 | running the gate's own function on the real transcript | three false denials, two wrong explanations → stop reasoning about the check and execute it against live data |
 
 **Common pattern:**
 
@@ -522,6 +635,8 @@ schema 提示、路径均已**移除**——只留漂移机制。通用、公开
 | 12 | 四个字符就能过的门,真正不可逆的操作却溜了 | ① | 读门自己的源码 |
 | 13 | 装着三个版本,跑的是已被删除的二进制 | ② | `CLAUDE_CODE_EXECPATH` 对照磁盘 |
 | 14 | 十来条并行工作流,漂移被清理,此后再没有过戏剧性拯救 | ② 规模化 | 项目内审计轮次 |
+| 15 | 三个月的推理被一条没人读过的默认值扫下磁盘 | ③ | 去读存储,而不是推理存储 |
+| 16 | 门在安装自己的新版本时拦了自己三次,而且理由不是它给的那个 | ② ×2 | 把门自己的函数拿到真实 transcript 上跑 |
 
 ---
 
@@ -815,6 +930,84 @@ E-026)。
 
 ---
 
+### 案例 15 —— 三个月的推理被一条没人读过的默认值扫下磁盘(③)
+
+**情境。** 2026 年 8 月。一位在年内早些时候丢过账号的使用者,正在设计一个"多留痕"的
+治理层,好让下一次丢失代价更小。当时有一个**从未说出口、也从未核实过**的前提:agent
+CLI 的本地 session 存储是一份**耐久记录**,要做的只是往里面写**更多**东西。
+
+**漂移。** 这是 ③ 最安静的一种形态:项目赖以为生的痕迹,住在一个**从来就不归项目所有**
+的地方。没有任何东西被放错、被覆盖——那个存储**根本就不是存储**。而方法论自己的
+"活交接"层有成文规范,一查却**到处都是零个实例**:有规范无机制,就不会产出任何东西,
+而没人会注意到,直到需要它的那一天。
+
+**纠错动作。** "这东西会过期吗"这个问题,是靠**读磁盘**回答的,不是靠推理:
+
+1. 枚举存储:约七十个 transcript 文件,最老 33 天,而**在那之前那三个月的使用,一条
+   记录都没有**。
+2. 排除全盘事件:同一根目录下的兄弟目录里,还躺着 100 天前的文件——所以删除是**选择性
+   的**,不是普遍的。
+3. 从**厂商自己的文档**确认机制:一条保留期设置,默认 30 天,在启动时执行清扫。
+
+第 3 步试了两次才成。第一次搜索这个设置,命中的是 **agent 自己写在当前 session
+transcript 里的话**——被搜索的存储里,装着这次搜索本身。**自我引用读起来和佐证一模
+一样,但一文不值**;只有独立来源才算数。
+
+**修复。** 两处改动,其中只有第二处属于治理。保留期被调长,这止住了失血。**根因是治理
+痕迹一开始就不该放在厂商存储里**:耐久载体是项目自己的仓库——那里,项目的历史本来就
+在替它保管。
+
+**如果未拦截。** 所有比窗口更久远的决策理由,会在项目**还活着的时候**消失,而且**损失
+是静默的**:不报错、不告警,只是下次去看的时候文件不在了。这位使用者其实已经付过一次
+这个代价:随账号一起丢掉的**不是代码**——代码在 Git 里——**而是代码背后的理由**,那部
+分不在。
+
+---
+
+### 案例 16 —— 门在安装自己的新版本时拦了自己三次,而且理由不是它给的那个(② 两次)
+
+**情境。** 2026 年 8 月。本插件的新版本已就绪,使用者要求**先装上再提交**,好让"它能用"
+意味着确实有一个 session 跑过它。安装插件是状态变更,于是这次安装走了本仓自己的门。
+
+**发生了什么。** 门拒了。**三次**,每次四字段都正确带在命令上,每次紧邻的上一条都是只读
+取证。它给出的理由是 `EVIDENCE —— 最近的调用里没有只读调用`,而这句话**是假的**:每次
+都有。
+
+**第一处漂移 —— 在门里。** `has_prior_evidence` 开头写着注释 *"最后一条就是正在被拦的
+破坏性调用;往它前面看"*,然后把它切掉。**那句注释是一条关于运行时的断言,而它从未对着
+运行时验证过。** PreToolUse 在调用被写进 transcript **之前**触发,所以最后一条通常是
+**上一条**——恰恰就是构成取证的那次检查。这个检查**丢掉了手上最好的证据,然后报告说没有
+证据**。
+
+同一场排查里还浮出两处:
+
+- 只读模式锚在行首,套到整条调用上问的是"这条命令是不是**以**只读动词开头"。
+  `cd repo && git status`——检查最常见的形状——**永不匹配**。
+- 分隔符在引号内也拆,于是一条 `python3 -c "…"` 被数成 22 个操作。`STANDALONE` 因此
+  **没有任何可满足的写法**:那条命令怎么写都过不去。
+
+**第二处漂移 —— 在诊断里。** 第一个解释是"transcript flush 竞态",第二个是"行首锚定"。
+**两个都说得很笃定,两个都错**;而且各自都能解释一部分证据——这正是它们显得可信的原因。
+真正定案是靠把门自己的模块 load 进来、拿 `has_prior_evidence` 跑真实 transcript ——
+它返回 `True`,证明这个检查**事后看得见证据,开火那一刻看不见**。
+
+**它为什么活了这么久。** 测试夹具是**把被拦的调用追加进 transcript** 之后再跑的。于是每
+条测试面对的 transcript 都比 hook 在生产中拿到的**更完整**,那个切片在测试里永远正确、
+在使用中永远错误。这是 E-020 换了个地方重演:**一个比运行时给得更多的夹具,不可能在它
+存在的目的上失败。**
+
+**修复。** 只有当最后一条确实是被拦的那条命令时才丢弃它。按**操作段**而不是开头动词判断
+一条 Bash 是否只读,并要求**每一段**都只读,这样"检查后面夹带一个变更"仍然不算取证。
+分隔符只在引号外拆。三条回归测试,其中一条**故意不把被拦调用放进 transcript**。
+
+**如果未拦截。** 没有任何不安全:这些全是误拒,门是向安全方向失败的。受损的是**它的信用**。
+一道反复拒绝正确工作的门——而且在 `STANDALONE` 那一项上提出了**做不到的要求**——会教会
+使用者:**绕开它比满足它便宜**。这正是 E-021 已经登记在案、针对**别人家**那道门的失效
+形态,如今在**自己这道门**上重现。单 session 开火 5 次、其中 4 次是误拒,恰好就是本方法
+论在元观察 2 里为自己设的"设计气味"阈值。
+
+---
+
 ## 联起来看
 
 | 案例 | 触发 | 关键动作 |
@@ -828,6 +1021,13 @@ E-026)。
 | 7 | 合并前全仓扫描 | 外部方案 vs 全仓 → 落地前拦截 |
 | 8 | grounding 工作树/分支核查 | 共用目录+切分支 → 在治理落到错分支前拦下 |
 | 9 | 外部人审 | 规范+机制层一并扩,同时加 2-独立证据规则防止过拟合 |
+| 10 | 首次运行官方校验器 | 已发布的 manifest → 任何 clean install 都装不上 → 让 CI 真去装一次,不只是校验 |
+| 11 | transcript 里的原始 hook stdout | 两道门在同一次调用上开火 → 归属要用以工具调用为键的机制输出,绝不靠 grep 文本 |
+| 12 | 读门自己的源码 | 四个字符就满足了一个文本检查 → 把文本检查换成结构检查 |
+| 13 | 运行路径对照磁盘 | 装了三个版本,在跑的二进制已被 unlink → 拿运行路径对磁盘,不看版本号字符串 |
+| 14 | 项目内审计轮次 | 腐化清理过一次,此后安静 → 触发次数必须连同分母一起报 |
+| 15 | 去读存储,而不是推理存储 | 一个被认为耐久的存储 → 枚举它、排除全盘事件、从独立来源确认机制 |
+| 16 | 把门自己的函数拿到真实 transcript 上跑 | 三次误拒、两个错误解释 → 停止推理这个检查,直接拿真实数据执行它 |
 
 **共同模式:**
 

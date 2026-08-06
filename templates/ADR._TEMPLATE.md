@@ -6,6 +6,11 @@
   - *Superseded*：决策仍有效,只是被更新的决策替换。
   - *Withdrawn*：决策本身作废,不是被替换。
 - **决策人 / Deciders:** <谁拍的板>
+- **来源草案 / From:** <C-YYYYMMDD-NN，该文件必须存在于 .governance/claims/；手写的 ADR 填「无」>
+- **确认原话 / Confirmed by:** "<人拍板时说的原话，逐字引用，不转述>"
+- **可分享 / Shareable:** <是 | 否>
+  - 决定这条是否可以进入对外交接材料。有疑问就填「否」。
+- **关联 HEAD / At commit:** <拍板时的 commit sha>
 
 ## 背景 / Context
 <是什么问题、什么约束促成这个决策。事后补录请标:"基于当时已知信息重建",并警惕②号漂移。>

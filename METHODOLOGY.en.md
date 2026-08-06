@@ -541,6 +541,34 @@ event has not been observed.** This methodology's own hook design is already
 constrained by it (PreToolUse only matches destructive Bash; SessionStart only
 fires at session start / resume).
 
+### Meta-observation 3: recording is bounded by economy
+
+> **Advisory clause · single direct event of support, pending second-evidence
+> confirmation** — grace period ≤ 30 days from 2026-08-06. Supporting event:
+> Case 15 / EVIDENCE E-028.
+
+A governance layer that records everything is not more reliable than one that
+records selectively — it is less. Volume costs attention at write time and costs
+trust at read time, because a reader who cannot tell which entries matter treats
+none of them as authoritative.
+
+**Do not aim for complete capture. Record only what affects a decision or a
+path. When "record everything" and "record accurately" conflict, take accuracy
+and drop coverage.**
+
+Two consequences follow directly:
+
+- Anything mechanically recoverable from code, Git or an existing transcript is
+  **not** worth recording again. A second copy is a second thing that can drift.
+- A summary produced at the end of a session, from a context that may already
+  have been compacted, is worth less than a note written at the moment of the
+  decision — and writing both manufactures a contradiction for the next session
+  to resolve.
+
+**Current evidence status:** one observed event (a store believed durable turned
+out to be on a retention timer, which made "record more into it" the wrong
+response). The constraint is stated as a design rule, never as a blocker.
+
 ---
 
 ## 11. Authority and revision model

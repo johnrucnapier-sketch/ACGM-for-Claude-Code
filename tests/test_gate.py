@@ -254,10 +254,86 @@ class GateTests(unittest.TestCase):
         )
         self.assertAsks(out, "STANDALONE")
 
+    def test_a_separator_inside_quotes_is_not_an_operation_boundary(self) -> None:
+        """The shell does not split there, and neither may the gate.
+
+        Observed 2026-08-06: a single `python3 -c "..."` was counted as
+        twenty-two operations because the separator pattern split on newlines
+        inside the quoted body. STANDALONE then had no satisfiable form — the
+        command could not be rewritten to pass — which is the shape that teaches
+        an operator to route around a gate rather than satisfy it (E-021).
+        """
+        out = self.run_gate(
+            'rm -rf "/tmp/acgm-scratch; and more"',
+            FIELDS_SCRATCH,
+            calls=[("Bash", "ls /tmp/acgm-scratch")],
+        )
+        self.assertPasses(out)
+
+    def test_a_separator_outside_quotes_still_splits(self) -> None:
+        out = self.run_gate(
+            'rm -rf "/tmp/acgm-scratch" ; ls /tmp',
+            FIELDS_SCRATCH,
+            calls=[("Bash", "ls /tmp/acgm-scratch")],
+        )
+        self.assertAsks(out, "STANDALONE")
+
     # -- EVIDENCE --------------------------------------------------------
 
     def test_no_prior_read_only_call_is_held(self) -> None:
         out = self.run_gate("rm -rf /tmp/x", FIELDS_OK, calls=[("Bash", "rm -rf /tmp/y")])
+        self.assertAsks(out, "EVIDENCE")
+
+    def test_evidence_survives_a_transcript_without_the_gated_call(self) -> None:
+        """PreToolUse fires before the call reaches the transcript.
+
+        The fixture in run_gate appends the gated call, so every other test here
+        sees a transcript more complete than the one the hook actually gets. That
+        optimism hid a real defect: dropping the last entry unconditionally threw
+        away the inspection immediately before, and the gate denied three
+        correctly evidenced invocations in a row on 2026-08-06 — while blocking
+        the installation of its own release.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            full = f"{FIELDS_SCRATCH.rstrip()}\nrm -rf /tmp/acgm-scratch"
+            payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": full},
+                # Note what is absent: the gated call itself.
+                "transcript_path": transcript(tmp, "", [("Bash", "ls -la /tmp/acgm-scratch")]),
+            }
+            result = subprocess.run(
+                ["sh", str(HOOK)],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertPasses(json.loads(result.stdout or "{}"))
+
+    def test_a_cd_prefixed_inspection_counts_as_evidence(self) -> None:
+        """`cd repo && git status` is the ordinary shape of a real inspection.
+
+        The read-only pattern is anchored, so applied to a whole invocation it
+        asked whether the command *starts* with a read-only verb. It almost never
+        does.
+        """
+        out = self.run_gate(
+            "rm -rf /tmp/acgm-scratch",
+            FIELDS_SCRATCH,
+            calls=[("Bash", 'cd /tmp/acgm-scratch && git status --short')],
+        )
+        self.assertPasses(out)
+
+    def test_a_cd_prefixed_mutation_does_not_count_as_evidence(self) -> None:
+        out = self.run_gate(
+            "rm -rf /tmp/acgm-scratch",
+            FIELDS_SCRATCH,
+            calls=[("Bash", "cd /tmp && ls && npm i -g something")],
+        )
         self.assertAsks(out, "EVIDENCE")
 
     # -- heredoc bodies are data, not operations -------------------------

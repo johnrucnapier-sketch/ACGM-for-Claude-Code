@@ -4,6 +4,101 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.9.0] — 2026-08-06
+
+### Added
+
+- **A decision ledger, so the reasoning outlives the transcript.** New
+  `decision-ledger` skill. The agent tracks *open threads* — questions raised and
+  not yet converged — and when one closes it drafts a record into
+  `.governance/claims/` immediately, without waiting for anyone. A human promotes
+  a draft into `.governance/decisions/` (an ADR); nothing else can.
+
+  Drafting and confirming are deliberately separate operations. Drafting is free
+  and never blocks, so a session that ends abruptly still leaves its reasoning on
+  disk, correctly marked unconfirmed. Confirmation is a stamp, not a save button.
+
+  Closure is detected from four observable signals — a human ruling, the topic
+  moving on, work entering implementation, an objection closing — never from the
+  agent's sense that something felt important. Confirmation requests may only
+  ride along with something the agent was already sending; they never become an
+  interruption of their own.
+
+  **What is actually enforced** is narrower than it looks, and the skill says so:
+  a hook can check that every decision names an existing claim, that a decision
+  body is not rewritten, and that a confirmation quote is present. It cannot
+  check that the human said it. That last one is audit, not mechanism — promotion
+  is a Git-visible file creation, which is what ACGM promises: violations are
+  visible, recorded and traceable, not impossible (E-029).
+
+- **SessionEnd now reports two more debts.** Alongside unverified `VERIFY-AFTER`
+  obligations it lists drafts nobody ruled on, and warns when `.governance/` has
+  changes that are not in the repository. It still creates nothing in a project
+  that never opted in, and it still never commits — Principle Six reserves that
+  for the human. It does **not** touch `OPEN_THREADS.md`: a script has no
+  judgment about which threads are still open, so that file stays the agent's,
+  and an unclosed thread is caught by the next session's grounding.
+
+- **First tests for the SessionEnd mode**, which had none: `tests/test_ledger.py`.
+
+- **Meta-observation 3 — recording is bounded by economy.** Do not aim for
+  complete capture; record only what affects a decision or a path. Marked as an
+  advisory clause under the 2-independent-evidence rule (Case 15 / E-028), grace
+  period ≤ 30 days.
+
+- **Case 15 / E-028.** On a working machine, about seventy transcript files
+  survived and three preceding months of continuous use did not — a retention
+  default nobody had read, applied at startup. This is the failure evidence the
+  ledger is built on; without it, adding a mechanism would violate
+  Meta-observation 2's ban on "just in case" additions.
+
+### Changed
+
+- `templates/ADR._TEMPLATE.md` gains `From:`, `Confirmed by:`, `Shareable:` and
+  `At commit:`. New `templates/CLAIM._TEMPLATE.md`.
+- `governance-bootstrap` step 3 now creates the full `.governance/` layout by
+  hand, and says plainly that no hook will create it for you.
+- SessionStart injection gains one line pointing at `decision-ledger` — the only
+  added per-session cost, backed by Case 15 as Meta-observation 2 requires.
+
+### Fixed
+
+- **The gate stopped denying correct work.** Found by using it: installing this
+  release was blocked three times in a row, with fields correctly carried and a
+  read-only inspection immediately before each attempt (Case 16).
+
+  - `has_prior_evidence` dropped the transcript's last entry on the assumption
+    that it was the call being gated. PreToolUse fires *before* that call is
+    written, so what it discarded was the inspection immediately before — the
+    evidence itself. It now drops the entry only when it really is the gated
+    command (E-030).
+  - The read-only pattern is anchored, so applied to a whole invocation it asked
+    whether the command *begins* with a read-only verb. `cd repo && git status`
+    never matched. Classification is now per operative segment, and **every**
+    segment must pass, so a mutation smuggled after an inspection still fails
+    (E-031).
+  - Separators were split inside quoted arguments, so one `python3 -c "…"` read
+    as twenty-two operations and `STANDALONE` had no satisfiable form. Splitting
+    is now quote-aware; unbalanced quotes fall back to the old split, which can
+    only deny (E-031).
+
+  All three are false denials, so nothing unsafe shipped. What they cost is
+  standing: a gate that refuses correct work — or states a requirement that
+  cannot be met — teaches its operator to route around it, which is E-021's
+  failure recorded against someone else's gate, reappearing here against this
+  one.
+
+- **The gate's own test fixture was hiding one of them.** It appended the gated
+  call to the transcript, so the slice under test was always correct in tests and
+  never in production. Same family as E-020, different mechanism: fixture
+  optimism rather than environment leakage. The regression test now deliberately
+  omits the gated call (E-032).
+
+- `acgm_gate.py`'s module docstring claimed a complete gate returns `ask`. It has
+  not since 0.4.1, and `ask` was removed *because* it is a no-op wherever the
+  permission mode auto-accepts (E-023). A stale docstring that describes a
+  behaviour removed for being unsafe is worse than none.
+
 ## [0.8.0] — 2026-08-05
 
 ### Changed — breaking

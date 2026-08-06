@@ -13,7 +13,13 @@ literal markers "(a)".."(d)" and was satisfied by four characters.
   STANDALONE the destructive command is the only operative segment
   EVIDENCE   a read-only tool call already happened in this session
 
-A complete gate still returns "ask". Evidence is not authorization.
+A complete gate emits no decision at all: it hands back to the harness's normal
+permission flow, where the human decides. Evidence is not authorization -- and
+"ask" is not enforcement either, since it is a no-op wherever the permission mode
+auto-accepts (EVIDENCE E-023, which is why v0.4.1 stopped returning it).
+
+Under ACGM_HOOK_MODE=sessionend the same file reports what the session is walking
+away from: unverified obligations, unruled drafts, and an uncommitted ledger.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 
 FIELDS = (
@@ -228,21 +235,107 @@ def fields_name_this_target(text: str, command: str) -> bool:
     return False
 
 
+def split_segments(command: str) -> list[str]:
+    """Split on shell separators, ignoring any that sit inside quotes.
+
+    A ';' or a newline inside a quoted argument is data, not an operation
+    boundary -- the shell does not treat it as one either. Splitting on it made a
+    single `python3 -c "..."` look like twenty-two operations, and STANDALONE
+    then had no satisfiable form: no way of writing that command could pass. A
+    gate that states an impossible requirement teaches the operator to route
+    around it (E-021), which is the failure this project is least able to afford.
+
+    Note what is deliberately *not* done here: the quoted body is not stripped
+    before the destructive filter runs. `sh -c "rm -rf /"` carries its verb
+    inside quotes, and dropping it would trade a false positive for a false
+    negative. Per this gate's own policy, misses are the worse error.
+
+    Unbalanced quotes fall back to the naive split, which over-segments. That
+    direction can only deny, never permit.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote:
+            if char == "\\" and quote == '"' and index + 1 < len(command):
+                current.append(char)
+                current.append(command[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            current.append(char)
+            index += 1
+            continue
+        if char in "'\"":
+            quote = char
+            current.append(char)
+            index += 1
+            continue
+        if char in ";\n":
+            segments.append("".join(current))
+            current = []
+            index += 1
+            continue
+        if command.startswith("&&", index) or command.startswith("||", index):
+            segments.append("".join(current))
+            current = []
+            index += 2
+            continue
+        if char == "|":
+            segments.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    if quote:
+        return SEPARATORS.split(command)
+    segments.append("".join(current))
+    return segments
+
+
 def operative_segments(command: str) -> list[str]:
     """Segments that actually do something, ignoring environment setup."""
     return [
         segment.strip()
-        for segment in SEPARATORS.split(command)
+        for segment in split_segments(command)
         if segment.strip() and not PREPARATORY.match(segment)
     ]
 
 
-def has_prior_evidence(calls: list[tuple[str, str]]) -> bool:
-    # The final entry is the destructive call being gated; look behind it.
-    for name, command in calls[:-1]:
+def bash_is_read_only(command: str) -> bool:
+    """Whether every operative segment of a Bash call only reads.
+
+    `READ_ONLY_BASH` is anchored, so it answers "does this command *start* with a
+    read-only verb". Applied to a whole invocation that is the wrong question:
+    `cd repo && git status` never matched, which made the most common shape of a
+    real inspection invisible to the evidence check. Ask it per segment instead --
+    `PREPARATORY` already drops the `cd` -- and require *all* of them to pass, so
+    `cd repo && ls && <mutation>` still does not count as evidence.
+    """
+    segments = operative_segments(command or "")
+    return bool(segments) and all(READ_ONLY_BASH.match(segment) for segment in segments)
+
+
+def has_prior_evidence(calls: list[tuple[str, str]], gated_command: str = "") -> bool:
+    """Whether a read-only call already happened before the one being gated.
+
+    PreToolUse fires *before* the call is written to the transcript, so the last
+    entry is usually the previous call, not this one. Dropping it blindly threw
+    away the single most useful piece of evidence -- the inspection immediately
+    before -- and denied three consecutive, correctly evidenced invocations
+    (2026-08-06, this gate blocking its own release's installation). Drop the
+    last entry only when it really is the command being gated.
+    """
+    prior = calls[:-1] if calls and calls[-1][1] == gated_command else calls
+    for name, command in prior:
         if name in READ_ONLY_TOOLS:
             return True
-        if name == "Bash" and READ_ONLY_BASH.match(command or ""):
+        if name == "Bash" and bash_is_read_only(command or ""):
             return True
     return False
 
@@ -303,40 +396,130 @@ def unresolved_obligations(path: str) -> list[str]:
     return open_promises
 
 
+CLAIM_ID = re.compile(r"C-\d{8}-\d{2}")
+
+
+def pending_claims(ledger_dir: str) -> list[str]:
+    """Drafted claims that no decision file references yet.
+
+    Purely a file-existence question: a claim is pending until some file in
+    decisions/ names its id. This says nothing about whether the human agreed --
+    it cannot, and the skill text must not pretend otherwise.
+    """
+    claims_dir = os.path.join(ledger_dir, "claims")
+    decisions_dir = os.path.join(ledger_dir, "decisions")
+    try:
+        drafted = sorted(
+            name[:-3] for name in os.listdir(claims_dir)
+            if name.endswith(".md") and CLAIM_ID.fullmatch(name[:-3])
+        )
+    except OSError:
+        return []
+    if not drafted:
+        return []
+    referenced: set[str] = set()
+    try:
+        for name in os.listdir(decisions_dir):
+            if not name.endswith(".md"):
+                continue
+            try:
+                with open(os.path.join(decisions_dir, name), encoding="utf-8", errors="replace") as fh:
+                    referenced.update(CLAIM_ID.findall(fh.read()))
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return [claim for claim in drafted if claim not in referenced]
+
+
+def uncommitted_ledger(ledger_dir: str) -> bool:
+    """Whether .governance/ has changes that are not in the repository yet.
+
+    Writing a file into the working tree is not the same as recording it. The
+    hook only makes that gap visible -- it never commits, because Principle Six
+    reserves committing for the human.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--", ledger_dir],
+            cwd=os.path.dirname(ledger_dir) or ".",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
 def session_end() -> None:
-    """Report VERIFY-AFTER promises the session is about to walk away from."""
+    """Report what this session is about to walk away from.
+
+    Two independent debts, reported together because they share the only moment
+    a session has left:
+
+      obligations  a VERIFY-AFTER promise no later tool call could have kept
+      ledger       drafts nobody ruled on, and ledger edits not yet committed
+
+    Everything here is decidable from the filesystem and the transcript. The
+    hook has no judgment: it cannot tell which threads are still open, so it
+    does not touch OPEN_THREADS.md. That file is the agent's to maintain, and
+    the next session's grounding is where an unclosed thread gets caught.
+    """
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError):
         sys.exit(0)
 
     transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not transcript:
-        sys.exit(0)
-
-    promises = unresolved_obligations(transcript)
-    if not promises:
-        sys.exit(0)
-
-    lines = [
-        "ACGM — session ending with unverified post-action obligations:",
-        "",
-    ]
-    lines += [f"  - {promise}" for promise in promises]
-    lines += [
-        "",
-        "Each of these declared a check that no later tool call could have run.",
-        "The operation is not done; it is unverified. Carry this into the next",
-        "session and verify before building on it.",
-        "",
-    ]
-    report = "\n".join(lines)
+    promises = unresolved_obligations(transcript) if transcript else []
 
     # Persist only where the project already opted into governance scaffolding.
     # Creating files in someone's repository uninvited is the behaviour v0.1's
     # PostToolUse hook was corrected for; do not reintroduce it here.
     ledger_dir = os.path.join(os.getcwd(), ".governance")
-    if os.path.isdir(ledger_dir):
+    has_ledger = os.path.isdir(ledger_dir)
+    unruled = pending_claims(ledger_dir) if has_ledger else []
+    unrecorded = uncommitted_ledger(ledger_dir) if has_ledger else False
+
+    if not promises and not unruled and not unrecorded:
+        sys.exit(0)
+
+    lines: list[str] = []
+    if promises:
+        lines += ["ACGM — session ending with unverified post-action obligations:", ""]
+        lines += [f"  - {promise}" for promise in promises]
+        lines += [
+            "",
+            "Each of these declared a check that no later tool call could have run.",
+            "The operation is not done; it is unverified. Carry this into the next",
+            "session and verify before building on it.",
+            "",
+        ]
+    if unruled:
+        lines += ["ACGM — drafted decisions nobody has ruled on:", ""]
+        lines += [f"  - {claim}" for claim in unruled]
+        lines += [
+            "",
+            "These are drafts, not decisions. They are on disk and nothing is lost,",
+            "but no human confirmed them, so nothing downstream may treat them as",
+            "settled.",
+            "",
+        ]
+    if unrecorded:
+        lines += [
+            "ACGM — .governance/ has changes that are not in the repository.",
+            "",
+            "A file in the working tree survives less than a file in a commit, and",
+            "the ledger exists precisely to survive. Review and commit it yourself;",
+            "this hook does not commit on your behalf.",
+            "",
+        ]
+    report = "\n".join(lines)
+
+    if has_ledger:
         try:
             with open(os.path.join(ledger_dir, "OPEN_OBLIGATIONS.md"), "a", encoding="utf-8") as fh:
                 fh.write(f"\n## Session ended with open obligations\n\n{report}")
@@ -391,7 +574,7 @@ def main() -> None:
 
     if transcript:
         calls = recent_tool_uses(transcript, EVIDENCE_WINDOW)
-        if calls and not has_prior_evidence(calls):
+        if calls and not has_prior_evidence(calls, command):
             problems.append(
                 "EVIDENCE — no read-only tool call precedes this one in the last\n"
                 "    %d calls. Read the target's current state first; do not assert\n"
