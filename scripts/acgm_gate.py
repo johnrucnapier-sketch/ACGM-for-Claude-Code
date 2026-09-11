@@ -56,8 +56,76 @@ READ_ONLY_BASH = re.compile(
     r"pwd|echo|printf|date|shasum|sha256sum|md5|diff|jq|sort|uniq|awk|sed(?!\s+-i)|"
     r"git\s+(?:status|log|show|diff|ls-tree|ls-files|rev-parse|rev-list|describe|"
     r"branch(?!\s+-[dD])|remote|config\s+--get|cat-file|hash-object|fetch)|"
-    r"claude\s+plugin\s+(?:list|details|validate)|npm\s+(?:view|ls)|python3?\s+-c)\b"
+    r"claude\s+plugin\s+(?:list|details|validate)|npm\s+(?:view|ls)|python3?\s+-c|"
+    # Remote inspections. Without these every `ssh host 'uptime'` would reach the
+    # gate, and a gate that fires on routine checks is one the operator learns to
+    # route around (E-021).
+    r"uptime|hostname|whoami|id|nproc|free|lscpu|lsblk|nvcc|"
+    r"tmux\s+(?:ls|list-sessions|list-windows|list-panes|has-session)|"
+    r"systemctl\s+(?:status|is-active|is-enabled|list-units)|"
+    r"docker\s+(?:ps|images|logs|inspect)|"
+    r"kubectl\s+(?:get|describe|logs))\b"
 )
+
+# `nvidia-smi` reads, until it is asked to write: -pl sets a power limit, -ac and
+# -lgc pin clocks, -pm changes persistence mode, -r resets the device. Listing the
+# query forms and requiring the segment to end there keeps the write forms out,
+# where a bare `nvidia-smi\b` alternative above would have admitted all of them.
+NVIDIA_SMI_READ_ONLY = re.compile(
+    r"^\s*nvidia-smi"
+    r"(?:\s+(?:-L|--list-gpus|-q|--query|--query-[\w-]+=\S*|--format=\S*|"
+    r"-i\s*\S+|--id=\S+|-l\s*\d*|-f\s*\S+))*\s*$"
+)
+
+# Commands whose effect lands where this session cannot look afterwards. The verb
+# table in the wrapper cannot classify these: what `ssh host 'bash run.sh'` does
+# is decided by a file on another machine, and no amount of reading this string
+# will say what that file does.
+REMOTE_EXEC = re.compile(r"^\s*(?:ssh|scp|rsync)\b")
+
+# Remote payloads are rarely one verb. Measured against this operator's own
+# history on 2026-09-11, the commonest shapes are polling loops and status
+# probes -- `until pgrep -f job; do sleep 10; done`, `for f in a b; do tail $f;
+# done`. Per-segment verb matching cannot see that those change nothing, and
+# gating them all would have denied 42% of every remote command ever run here.
+# That is the rate at which a gate stops being read and starts being routed
+# around (E-021), so the structure has to be understood rather than refused.
+STRUCTURE = re.compile(r"^\s*(?:do|done|then|else|fi|esac|;;|\{|\}|\(\)|:)\s*$")
+# Prefixes that sit in front of the real command without being one. Stripping
+# them and classifying what is left is strictly safer than matching on them:
+# `sudo rm -rf x` becomes `rm -rf x` and is still refused, while `sudo sshd -T`
+# becomes a config dump and stops being treated as an unknown.
+PREFIXES = (
+    re.compile(r"^\s*(?:do|then|else)\s+"),
+    re.compile(r"^\s*(?:while|until|if|elif)\s+"),
+    re.compile(r"^\s*sudo(?:\s+-[A-Za-z]+(?:\s+\S+)?)*\s+"),
+    re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+"),
+)
+LOOP_HEAD = re.compile(r"^\s*for\s+\w+\s+in\b")
+COND_HEAD = re.compile(r"^\s*(?:while|until|if|elif)\s+")
+# Read-only verbs that only ever appear inside such payloads.
+READ_ONLY_HELPER = re.compile(
+    r"^\s*(?:sleep|pgrep|pidof|tr|cut|paste|test|\[|true|false|seq|nl|column|"
+    r"basename|dirname|readlink|realpath|numfmt|md5sum|sha1sum|"
+    r"ss|ip\s+(?:a|addr|link|route)\b|lsof|netstat|uname|"
+    r"systemctl\s+list-unit-files|pip3?\s+(?:show|list|--version)|"
+    r"python3?\s+-m\s+pip\s+(?:show|list))\b"
+)
+# Deliberately absent from that list, each caught by a test: a bare `nvidia-smi`
+# would have admitted `nvidia-smi -pl 300`, which rewrites a power limit;
+# `watch` and `timeout N` take an arbitrary command as their argument, so
+# matching on the wrapper says nothing about what runs underneath it.
+
+# ssh options that consume the word after them; anything else short-circuits to
+# the host. Getting this wrong in the permissive direction would read the host as
+# the payload, so unknown flags are treated as taking no argument.
+SSH_OPTS_WITH_ARG = frozenset(
+    "-b -c -D -E -e -F -I -i -J -L -l -m -O -o -p -Q -R -S -W -w".split()
+)
+
+# A transfer writes on the far side. These two say it will not.
+DRY_RUN = re.compile(r"(?:^|\s)(?:--dry-run|-n)(?:\s|$)")
+
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "NotebookRead", "WebFetch", "WebSearch"}
 EVIDENCE_WINDOW = 12
 
@@ -318,7 +386,177 @@ def bash_is_read_only(command: str) -> bool:
     `cd repo && ls && <mutation>` still does not count as evidence.
     """
     segments = operative_segments(command or "")
-    return bool(segments) and all(READ_ONLY_BASH.match(segment) for segment in segments)
+    return bool(segments) and all(
+        READ_ONLY_BASH.match(segment) or NVIDIA_SMI_READ_ONLY.match(segment)
+        for segment in segments
+    )
+
+
+def shell_words(text: str) -> list[tuple[str, bool]] | None:
+    """Split into words the way a shell would, keeping "was this quoted".
+
+    Returns None when a quote never closes. That is not a parse to be guessed at:
+    an unreadable command must reach the gate, never slip past it.
+    """
+    words: list[tuple[str, bool]] = []
+    current: list[str] = []
+    quoted = False
+    started = False
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if char == "\\" and quote == '"' and index + 1 < len(text):
+                current.append(text[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+                index += 1
+                continue
+            current.append(char)
+            index += 1
+            continue
+        if char in "'\"":
+            quote = char
+            quoted = True
+            started = True
+            index += 1
+            continue
+        if char.isspace():
+            if started:
+                words.append(("".join(current), quoted))
+                current = []
+                quoted = False
+                started = False
+            index += 1
+            continue
+        current.append(char)
+        started = True
+        index += 1
+    if quote:
+        return None
+    if started:
+        words.append(("".join(current), quoted))
+    return words
+
+
+def ssh_payload(segment: str) -> str | None:
+    """What ssh will run on the far side.
+
+    None means nothing will: a bare connection executes no remote command. The
+    empty string means the payload could not be read, which the caller must treat
+    as a reason to gate rather than a reason to relax.
+    """
+    words = shell_words(segment)
+    if words is None:
+        return ""
+    index = 1  # the verb itself
+    while index < len(words):
+        word, was_quoted = words[index]
+        if was_quoted or not word.startswith("-"):
+            break
+        if word in SSH_OPTS_WITH_ARG:
+            index += 2
+            continue
+        index += 1
+    if index >= len(words):
+        return None  # options only, no host
+    index += 1  # the host
+    if index >= len(words):
+        return None  # bare connection
+    rest = words[index:]
+    if len(rest) == 1:
+        return rest[0][0]
+    return " ".join(word for word, _ in rest)
+
+
+def payload_is_read_only(payload: str) -> bool:
+    """Whether a remote payload only reads, understanding shell structure.
+
+    Kept separate from `bash_is_read_only` on purpose. That function answers a
+    narrower question -- does this local invocation count as evidence -- and
+    widening it here would quietly widen what counts as evidence everywhere.
+
+    A command substitution makes the answer unknowable from the text, and
+    unknowable is not read-only.
+    """
+    if not payload.strip() or SUBSTITUTION.search(payload):
+        return False
+    segments = [
+        segment.strip()
+        for segment in split_segments(payload)
+        if segment.strip() and not PREPARATORY.match(segment)
+    ]
+    if not segments:
+        return False
+    for segment in segments:
+        if STRUCTURE.match(segment) or LOOP_HEAD.match(segment):
+            continue
+        stripped = segment
+        for _ in range(6):  # bounded: `do sudo VAR=1 cmd` nests, runaway does not
+            before = stripped
+            for prefix in PREFIXES:
+                stripped = prefix.sub("", stripped, count=1)
+            if stripped == before:
+                break
+        if not stripped.strip():
+            continue
+        if (
+            READ_ONLY_BASH.match(stripped)
+            or READ_ONLY_HELPER.match(stripped)
+            or NVIDIA_SMI_READ_ONLY.match(stripped)
+        ):
+            continue
+        return False
+    return True
+
+
+def remote_needs_gate(command: str) -> bool:
+    """Whether a remote-execution command has to face the gate.
+
+    The verb table in the wrapper answers "did the operator type something known
+    to be destructive". For remote work that is the wrong question, and answering
+    it let `ssh rig 'bash run_quant.sh'` start an irreversible job in silence
+    while `ssh rig 'rm -rf x'` was caught -- the second only because its verb
+    survived inside the quotes.
+
+    So ask the payload instead, with the same rules used everywhere else. A
+    remote inspection stays free. Anything this function cannot show to be
+    read-only reaches the gate, including anything it cannot read at all: the
+    gate's claim here is not "this destroys something", it is "from here, this
+    cannot be told apart from something that does".
+    """
+    for segment in operative_segments(command):
+        if not REMOTE_EXEC.match(segment):
+            continue
+        verb = segment.split()[0]
+        if verb in ("scp", "rsync"):
+            if DRY_RUN.search(segment):
+                continue
+            return True
+        payload = ssh_payload(segment)
+        if payload is None:
+            continue
+        if not payload_is_read_only(payload):
+            return True
+    return False
+
+
+def remote_probe() -> None:
+    """Exit 0 when the wrapper should send this command to the gate, 1 when not.
+
+    A separate mode rather than a branch inside the gate: the wrapper's cheap
+    filter has to reach a verdict before it decides to run the gate at all.
+    """
+    try:
+        payload = json.load(sys.stdin)
+    except (ValueError, OSError):
+        sys.exit(0)  # unreadable input is not evidence of safety
+    command = (payload.get("tool_input") or {}).get("command", "")
+    _, operation = split_command(command)
+    sys.exit(0 if remote_needs_gate(operation) else 1)
 
 
 def has_prior_evidence(calls: list[tuple[str, str]], gated_command: str = "") -> bool:
@@ -618,5 +856,7 @@ if __name__ == "__main__":
         session_end()
     elif mode == "gate":
         main()
+    elif mode == "remote":
+        remote_probe()
     else:
         emit(None)

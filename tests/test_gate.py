@@ -414,6 +414,94 @@ class GateTests(unittest.TestCase):
     def test_git_force_push_is_gated(self) -> None:
         self.assertAsks(self.run_gate("git push --force origin master"), "FIELDS")
 
+    # -- remote execution ------------------------------------------------
+    #
+    # The table in the shell wrapper recognises verbs. A command whose effect
+    # lives inside a script filename carries none, so `ssh rig 'bash run.sh'`
+    # passed silently while starting an irreversible job on another machine
+    # (observed 2026-09-11 in this operator's own activity log). The decision
+    # has to come from the payload, not from the fact that `ssh` was typed.
+
+    def test_ssh_running_an_opaque_script_is_gated(self) -> None:
+        """The shape that actually went ungated."""
+        for command in (
+            "ssh rig 'bash /models/_work/run_quant.sh'",
+            "ssh -o ConnectTimeout=12 rig 'tmux new-session -d -s job \"bash /m/run.sh\"'",
+            "ssh rig '/home/x/venv/bin/python /models/graft.py --out /models/o'",
+        ):
+            with self.subTest(command=command):
+                self.assertAsks(self.run_gate(command), "FIELDS")
+
+    def test_ssh_with_a_read_only_payload_passes(self) -> None:
+        """A remote inspection must stay free, or the gate becomes noise (E-021)."""
+        for command in (
+            "ssh rig 'uptime'",
+            "ssh rig 'tail -n 50 /models/_work/quant.log'",
+            "ssh -p 2222 rig 'df -h'",
+            "ssh rig 'tmux ls'",
+            "ssh rig 'systemctl status some-unit'",
+        ):
+            with self.subTest(command=command):
+                self.assertPasses(self.run_gate(command))
+
+    def test_ssh_options_before_the_host_do_not_hide_the_payload(self) -> None:
+        out = self.run_gate("ssh -o ConnectTimeout=12 -i /k/id rig 'bash /m/run.sh'")
+        self.assertAsks(out, "FIELDS")
+
+    def test_a_bare_ssh_connection_runs_nothing_and_passes(self) -> None:
+        self.assertPasses(self.run_gate("ssh rig"))
+
+    def test_an_unreadable_payload_fails_closed(self) -> None:
+        """Unbalanced quotes mean the payload cannot be read. Gate it."""
+        self.assertAsks(self.run_gate("ssh rig 'bash /m/run.sh"), "FIELDS")
+
+    def test_a_remote_delete_is_still_gated(self) -> None:
+        """Already caught by substring before this change; keep it caught."""
+        self.assertAsks(self.run_gate("ssh rig 'rm -rf /models/_work/tmp'"), "FIELDS")
+
+    def test_a_transfer_writes_on_the_far_side_and_is_gated(self) -> None:
+        for command in (
+            "scp -r ./build rig:/models/_work/",
+            "rsync -a --delete ./src/ rig:/models/_work/src/",
+        ):
+            with self.subTest(command=command):
+                self.assertAsks(self.run_gate(command), "FIELDS")
+
+    def test_a_dry_run_transfer_changes_nothing_and_passes(self) -> None:
+        self.assertPasses(self.run_gate("rsync -a --delete --dry-run ./src/ rig:/m/src/"))
+
+    def test_stripping_a_prefix_must_not_strip_the_danger_with_it(self) -> None:
+        """`sudo`, env assignments and block keywords are stripped before the
+        payload is classified. That is only safe if what is left is still read."""
+        for command in (
+            "ssh rig 'sudo rm -rf /models/_work'",
+            "ssh rig 'HTTPS_PROXY=http://x:7890 python /models/train.py'",
+            "ssh rig 'for f in a b; do bash /m/run.sh $f; done'",
+            "ssh rig 'sudo -u ubuntu systemctl restart voice-gateway'",
+            # `sshd -T` dumps config, but it is one flag away from starting a
+            # daemon and the verb alone cannot tell those apart.
+            "ssh rig 'sudo sshd -T'",
+        ):
+            with self.subTest(command=command):
+                self.assertAsks(self.run_gate(command), "FIELDS")
+
+    def test_a_prefixed_inspection_is_recognised_as_read_only(self) -> None:
+        for command in (
+            "ssh rig 'sudo tail -n 50 /var/log/syslog'",
+            "ssh rig 'until pgrep -f trainer; do sleep 10; done'",
+            "ssh rig 'for f in a b; do tail -n 5 $f; done'",
+        ):
+            with self.subTest(command=command):
+                self.assertPasses(self.run_gate(command))
+
+    def test_a_command_substitution_payload_is_not_assumed_read_only(self) -> None:
+        self.assertAsks(self.run_gate("ssh rig 'echo $(cat /etc/shadow)'"), "FIELDS")
+
+    def test_nvidia_smi_reads_freely_but_setting_device_state_does_not(self) -> None:
+        """`nvidia-smi` queries; `nvidia-smi -pl 300` rewrites a power limit."""
+        self.assertPasses(self.run_gate("ssh rig 'nvidia-smi --query-gpu=name --format=csv'"))
+        self.assertAsks(self.run_gate("ssh rig 'nvidia-smi -pl 300'"), "FIELDS")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

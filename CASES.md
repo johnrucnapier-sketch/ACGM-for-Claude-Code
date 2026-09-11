@@ -42,6 +42,7 @@ note on rates.
 | 15 | Three months of reasoning swept off the disk by a default nobody had read | ③ | reading the store instead of reasoning about it |
 | 16 | The gate blocked its own release three times, for a reason it was not giving | ② ×2 | running the gate's own function on the real transcript |
 | 17 | The self-check compared the cache with itself, and passed | ② in a tool | reading the script's own baseline resolution, then running it from two paths |
+| 18 | The gate read the verb, and the verb was a filename | ① in a tool | the activity log's own UNGATED list, replayed against the current filter |
 
 ---
 
@@ -599,6 +600,57 @@ scrupulous, and credulous everywhere else, spends exactly the trust it earned.
 
 ---
 
+### Case 18 — The gate read the verb, and the verb was a filename (① in a tool)
+
+**Situation.** September 2026. Reviewing this machine's own governance activity
+log at the end of an unrelated check. Two sessions on a model-training project
+were marked `GAPS`, with three commands listed as `UNGATED`.
+
+**What happened.** They were remote jobs:
+`ssh rig 'bash run_quant.sh'`, `ssh rig '<venv>/python graft_vision.py'`, and a
+`tmux new-session` wrapping the first. Each starts an irreversible job on another
+machine. None of them made the gate fire.
+
+**The first diagnosis was wrong.** The obvious story — the filter sees `ssh` and
+cannot look inside the quotes — was stated before it was checked. Replaying the
+commands against the current filter refuted it: `ssh rig 'rm -rf x'` **is**
+caught. The filter substring-matches the whole invocation, so quotes hide
+nothing.
+
+**The actual drift.** The filter recognises *verbs*. `rm -rf` survives inside
+quotes because it is still the text `rm -rf`. `bash run_quant.sh` carries no verb
+the table knows — the entire effect lives in a file on another machine, and no
+amount of reading the command string will say what that file does. Replaying a
+wider set confirmed the gap is not remote-specific: `bash run.sh`,
+`python train.py`, `make deploy` and `npm run migrate` were all invisible
+locally too.
+
+**Why remote is still the place to fix it first.** ACGM gates an operation so a
+post-action check remains possible. `VERIFY-AFTER` is hardest exactly where the
+effect landed somewhere this session cannot look.
+
+**Fix.** Read the payload — what ssh will actually run on the far side — and
+apply the same read-only rules to it, recursively. A remote inspection stays
+free. Anything that cannot be *shown* to be read-only reaches the gate,
+including anything that cannot be parsed. The claim the gate makes here is
+deliberately weaker than "this is destructive": it is "from here, this cannot be
+told apart from something that is."
+
+**The part that took the longest.** The first working version denied 42% of every
+remote command in this operator's history. That is not a strict gate, it is a
+broken one — E-021's rate. Reading the refusals showed why: the payloads are
+shell, not single verbs. `until pgrep -f job; do sleep 10; done` changes nothing
+and was refused four times over. Teaching the classifier about loop keywords,
+`sudo`, and leading environment assignments — stripping each and judging what
+remains, so `sudo rm -rf` is still refused — brought it to 28%, most of which is
+genuine remote state change plus a deliberate refusal to guess at `$(...)`.
+
+**If uncaught.** Quantization runs, model grafts and service restarts on a remote
+host, none of them carrying an evidence record or a stated rollback, and the
+activity log reporting the sessions as governed.
+
+---
+
 ## How it adds up
 
 | Case | Trigger | Key action |
@@ -678,6 +730,7 @@ schema 提示、路径均已**移除**——只留漂移机制。通用、公开
 | 15 | 三个月的推理被一条没人读过的默认值扫下磁盘 | ③ | 去读存储,而不是推理存储 |
 | 16 | 门在安装自己的新版本时拦了自己三次,而且理由不是它给的那个 | ② ×2 | 把门自己的函数拿到真实 transcript 上跑 |
 | 17 | 自检把缓存跟它自己比了一遍,然后通过了 | ② 发生在工具里 | 读脚本自己的基准解析逻辑,再从两条路径各跑一次 |
+| 18 | 门读的是动词,而动词是个文件名 | ① 发生在工具里 | activity 自己的 UNGATED 清单,拿当前过滤器重放一遍 |
 
 ---
 
@@ -1078,6 +1131,44 @@ transcript 里的话**——被搜索的存储里,装着这次搜索本身。**�
 理由是它证明不了——那条拒绝是这个脚本存在的全部意义。而就在那条拒绝的上一行,它正在
 报告一次自己从未做过的比对。一个在它被设计来严谨的地方严谨、在别处轻信的工具,花掉的
 正好是它挣来的那份信任。
+
+---
+
+### 案例 18 —— 门读的是动词,而动词是个文件名(① 发生在工具里)
+
+**情境。** 2026 年 9 月。一次无关的检查收尾时,顺手翻本机的治理活动日志。某个模型
+训练项目的两个 session 被标为 `GAPS`,列出三条 `UNGATED` 命令。
+
+**发生了什么。** 那是远程任务:`ssh rig 'bash run_quant.sh'`、
+`ssh rig '<venv>/python graft_vision.py'`,以及把前者包进 `tmux new-session` 的一条。
+每一条都在另一台机器上启动不可逆任务。门一次都没开火。
+
+**第一版诊断是错的。** 那个顺理成章的故事——门看到 `ssh`,看不进引号里——在被核实
+之前就说出口了。拿这些命令对当前过滤器重放,直接推翻:`ssh rig 'rm -rf x'` **是**被
+抓住的。过滤器对整条调用做子串匹配,引号藏不住任何东西。
+
+**真正的漂移。** 过滤器认的是**动词**。`rm -rf` 在引号里活下来,因为它仍然是
+`rm -rf` 这段文本。而 `bash run_quant.sh` 不带任何表里认识的动词——全部效果都在另一
+台机器的一个文件里,把这条命令字符串读穿也说不出那个文件会干什么。扩大重放后确认:
+这个缺口不是远程独有的,`bash run.sh`、`python train.py`、`make deploy`、
+`npm run migrate` 在本地同样隐形。
+
+**那为什么仍先修远程。** ACGM 拦一个操作,是为了让后验核验仍然可能。而
+`VERIFY-AFTER` 最难履行的地方,恰恰是效果落在本 Session 看不到的那一侧。
+
+**修法。** 读载荷——ssh 真正会在对面跑的东西——把同一套只读规则**递归**用上去。远程
+只读检查照样免费。任何不能被**证明**是只读的都进门,包括任何解析不了的。门在这里做
+的断言刻意比"这条是破坏性的"更弱:它说的是"从这里看,这条和会造成破坏的那种分不开"。
+
+**花时间最长的部分。** 第一个能跑的版本,拒掉了本操作者历史上 **42%** 的远程命令。
+那不是门严,那是门坏了——正是 E-021 的比率。读那些拒绝理由才明白原因:载荷是 shell,
+不是单个动词。`until pgrep -f job; do sleep 10; done` 什么都不改,却被连拒四次。把循环
+关键字、`sudo`、前置环境变量赋值教给分类器——各自剥掉再判剩下的,所以 `sudo rm -rf`
+照样被拒——降到 **28%**,其中大部分是真实的远程状态变更,外加一条刻意的原则:`$( )`
+不猜。
+
+**若未被抓住。** 远程主机上的量化任务、模型改造、服务重启,一条证据记录、一份回滚方案
+都没有,而活动日志把这些 session 报成"已治理"。
 
 ---
 

@@ -4,6 +4,55 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.9.2] — 2026-09-11
+
+### Fixed
+
+- **The gate read the verb, and the verb was a filename.** `ssh rig 'bash
+  run_quant.sh'` started an irreversible job on another machine without the gate
+  firing once, while `ssh rig 'rm -rf x'` was caught — the latter only because
+  its verb happened to survive inside the quotes. The filter substring-matches
+  the whole invocation, so quoting hides nothing; writing no recognised verb at
+  all hides everything (Case 18, E-034).
+
+  A remote-execution command is now decided from its **payload**: what ssh will
+  actually run on the far side, classified with the same read-only rules used
+  everywhere else, recursively. `ssh host 'uptime'` still costs nothing. `scp`
+  and `rsync` write on the far side and are gated unless `--dry-run`. Anything
+  that cannot be *shown* to be read-only — including anything that cannot be
+  parsed — reaches the gate. The claim is deliberately weaker than "this is
+  destructive": it is "from here, this cannot be told apart from something that
+  is."
+
+  The gap is not remote-specific — `bash run.sh` and `make deploy` are equally
+  invisible locally, and still are. Remote is fixed first because `VERIFY-AFTER`
+  is hardest exactly where the effect landed somewhere the session cannot look.
+
+### Changed
+
+- **Payload classification understands shell structure, not just verbs.** The
+  first working version of the above denied 42% of every remote command in the
+  author's history. That is E-021's rate, not strictness: the payloads are shell,
+  and `until pgrep -f job; do sleep 10; done` changes nothing. Loop and
+  conditional keywords, `sudo`, and leading environment assignments are now
+  stripped and what remains is judged — so `sudo rm -rf x` is still refused —
+  bringing it to 28% on the same corpus of 6157 commands.
+
+  Kept out of the read-only set on purpose, each with a test: a bare
+  `nvidia-smi` (`-pl` rewrites a power limit), `watch` and `timeout N` (both take
+  an arbitrary command), and any payload containing `$(...)`.
+
+- `READ_ONLY_BASH` gains the remote inspections this made routine — `uptime`,
+  `free`, `nproc`, `tmux ls`, `systemctl status`, `docker ps`, `kubectl get`,
+  `ss`, `pip show` and others. This also widens what counts as evidence, which
+  is the intended direction: they are reads.
+
+### Added
+
+- Case 18 and E-034 in `CASES.md` / `EVIDENCE.md`, both language halves.
+- Eleven regression tests, including four that assert the prefix-stripping does
+  not strip the danger with the prefix.
+
 ## [0.9.1] — 2026-09-11
 
 ### Fixed

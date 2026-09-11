@@ -118,6 +118,29 @@ case "$scan" in
   *"curl "*"| sh"*|*"curl "*"| bash"*|*"wget "*"| sh"*|*"wget "*"| bash"*) is_destructive=1 ;;
 esac
 
+# ---- Remote execution: decide from the payload, not from the verb ----
+# The table above answers "did the operator type something known to be
+# destructive". For work that runs on another machine that is the wrong
+# question. Observed 2026-09-11 in this operator's own activity log:
+# `ssh rig 'bash run_quant.sh'` and `ssh rig '<venv>/python graft.py'` passed in
+# silence and started irreversible jobs, while `ssh rig 'rm -rf x'` was caught --
+# the latter only because its verb happened to survive inside the quotes.
+#
+# So read what will actually run on the far side and apply the same read-only
+# rules to it. `ssh rig 'uptime'` stays free; anything that cannot be shown to be
+# read-only, including anything that cannot be parsed, goes to the gate.
+if [ "$is_destructive" = 0 ]; then
+  case "$scan" in
+    *ssh*|*scp*|*rsync*)
+      if printf '%s' "$input" \
+        | ACGM_HOOK_MODE=remote python3 "$(dirname "$0")/acgm_gate.py" >/dev/null 2>&1
+      then
+        is_destructive=1
+      fi
+      ;;
+  esac
+fi
+
 [ "$is_destructive" = 1 ] || { echo '{}'; exit 0; }
 
 # ---- Structural gate (python3; only reached for destructive commands) ----
