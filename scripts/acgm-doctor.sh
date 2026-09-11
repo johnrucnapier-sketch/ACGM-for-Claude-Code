@@ -168,17 +168,43 @@ PY
   elif [ ! -d "$install_path" ]; then
     bad "install path exists" "$install_path"
   else
-    diff_count=0
-    for f in $(cd "$install_path" && find . -type f ! -path './.in_use/*' | sed 's|^\./||'); do
-      [ -f "$PLUGIN_DIR/$f" ] || { diff_count=$((diff_count+1)); continue; }
-      a=$(shasum < "$install_path/$f" | cut -d' ' -f1)
-      b=$(shasum < "$PLUGIN_DIR/$f" | cut -d' ' -f1)
-      [ "$a" = "$b" ] || diff_count=$((diff_count+1))
-    done
-    if [ "$diff_count" -eq 0 ]; then
-      ok "cache matches source" "$install_path"
+    # A byte comparison only means something against a DIFFERENT tree. Invoked
+    # from inside the cache — which is exactly how the SessionStart line tells
+    # you to invoke it — PLUGIN_DIR *is* install_path, and the loop below would
+    # compare the cache with itself and pass unconditionally. That is the
+    # "green light that proves nothing" this whole script exists to refuse.
+    # So: when the two resolve to the same tree, fall back to the marketplace's
+    # own source directory, and if there isn't one, say so instead of passing.
+    src="$PLUGIN_DIR"
+    if [ "$(CDPATH= cd -- "$PLUGIN_DIR" && pwd -P)" = "$(CDPATH= cd -- "$install_path" && pwd -P)" ]; then
+      src=$(PLUGIN_ID="$PLUGIN_ID" python3 - ~/.claude/plugins/known_marketplaces.json <<'PY'
+import json, os, sys
+try:
+    name = os.environ["PLUGIN_ID"].split("@", 1)[1]
+    source = json.load(open(sys.argv[1]))[name]["source"]
+    print(source.get("path", "") if source.get("source") == "directory" else "")
+except Exception:
+    print("")
+PY
+)
+    fi
+    if [ -z "$src" ] || [ ! -d "$src" ]; then
+      warn "cache matches source" "cannot verify from here — rerun with --plugin-dir <source tree>"
+    elif [ "$(CDPATH= cd -- "$src" && pwd -P)" = "$(CDPATH= cd -- "$install_path" && pwd -P)" ]; then
+      warn "cache matches source" "source is the install path — self-referential, nothing compared"
     else
-      bad "cache matches source" "$diff_count file(s) differ — reinstall; 'update' is a no-op at the same version"
+      diff_count=0
+      for f in $(cd "$install_path" && find . -type f ! -path './.in_use/*' | sed 's|^\./||'); do
+        [ -f "$src/$f" ] || { diff_count=$((diff_count+1)); continue; }
+        a=$(shasum < "$install_path/$f" | cut -d' ' -f1)
+        b=$(shasum < "$src/$f" | cut -d' ' -f1)
+        [ "$a" = "$b" ] || diff_count=$((diff_count+1))
+      done
+      if [ "$diff_count" -eq 0 ]; then
+        ok "cache matches source" "matches $src"
+      else
+        bad "cache matches source" "$diff_count file(s) differ from $src — reinstall; 'update' is a no-op at the same version"
+      fi
     fi
   fi
 else
