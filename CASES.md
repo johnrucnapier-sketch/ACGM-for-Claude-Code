@@ -41,6 +41,7 @@ note on rates.
 | 14 | ~10 parallel work streams, drift cleared, then nothing dramatic ever again | ② at scale | project-internal audit rounds |
 | 15 | Three months of reasoning swept off the disk by a default nobody had read | ③ | reading the store instead of reasoning about it |
 | 16 | The gate blocked its own release three times, for a reason it was not giving | ② ×2 | running the gate's own function on the real transcript |
+| 17 | The self-check compared the cache with itself, and passed | ② in a tool | reading the script's own baseline resolution, then running it from two paths |
 
 ---
 
@@ -559,6 +560,45 @@ in Meta-observation 2.
 
 ---
 
+### Case 17 — The self-check compared the cache with itself, and passed (② in a tool)
+
+**Situation.** September 2026. An ordinary question from the operator: is this
+machine's installation of this plugin still what the repository says it should be?
+The answer is supposed to start with `acgm doctor`, and the SessionStart line tells
+the operator to run it from the installed cache.
+
+**What happened.** Doctor reported six checks, all PASS, including
+`cache matches source`. Three files were out of sync between the cache and the
+repository at that moment.
+
+**The drift.** `PLUGIN_DIR` defaults to the script's own parent directory.
+`install_path` is read from `installed_plugins.json`. Run from inside the cache —
+the documented way to run it — those two resolve to the same tree, and the
+comparison loop hashed every file against itself. `diff_count` could not be
+anything but zero. The check that exists to catch a stale cache was structurally
+incapable of reporting one, on its default path.
+
+**How it surfaced.** Not from the output, which was green. From reading the
+baseline resolution, then running the same script twice with different baselines:
+from the cache, `PASS`; with `--plugin-dir` pointed at the repository,
+`FAIL 3 file(s) differ`. Same bytes, two verdicts, one of them vacuous.
+
+**Fix.** When `PLUGIN_DIR` and `install_path` resolve to the same tree, fall back
+to the marketplace's registered source directory. When there is no local source to
+compare against, WARN rather than PASS — the absence of a baseline is not evidence
+of agreement. And the PASS line now names what it compared against
+(`matches /path/to/source`), so a pass that compared nothing has nowhere to hide.
+
+**If uncaught.** Nothing unsafe followed: the cache was stale by two documentation
+files. The cost is the one this project keeps recording against other people's
+tools, arriving here against its own. Doctor's design refuses to report runtime
+activation *because it cannot prove it* — that refusal is the script's whole
+reason for existing. One line above that refusal, it was reporting a comparison it
+had not made. A tool that is scrupulous in the place it was designed to be
+scrupulous, and credulous everywhere else, spends exactly the trust it earned.
+
+---
+
 ## How it adds up
 
 | Case | Trigger | Key action |
@@ -637,6 +677,7 @@ schema 提示、路径均已**移除**——只留漂移机制。通用、公开
 | 14 | 十来条并行工作流,漂移被清理,此后再没有过戏剧性拯救 | ② 规模化 | 项目内审计轮次 |
 | 15 | 三个月的推理被一条没人读过的默认值扫下磁盘 | ③ | 去读存储,而不是推理存储 |
 | 16 | 门在安装自己的新版本时拦了自己三次,而且理由不是它给的那个 | ② ×2 | 把门自己的函数拿到真实 transcript 上跑 |
+| 17 | 自检把缓存跟它自己比了一遍,然后通过了 | ② 发生在工具里 | 读脚本自己的基准解析逻辑,再从两条路径各跑一次 |
 
 ---
 
@@ -1005,6 +1046,38 @@ transcript 里的话**——被搜索的存储里,装着这次搜索本身。**�
 使用者:**绕开它比满足它便宜**。这正是 E-021 已经登记在案、针对**别人家**那道门的失效
 形态,如今在**自己这道门**上重现。单 session 开火 5 次、其中 4 次是误拒,恰好就是本方法
 论在元观察 2 里为自己设的"设计气味"阈值。
+
+---
+
+### 案例 17 —— 自检把缓存跟它自己比了一遍,然后通过了(② 发生在工具里)
+
+**情境。** 2026 年 9 月。操作者提了个再普通不过的问题:这台机器上装的这个插件,还是
+仓库里说的那个东西吗?回答本该从 `acgm doctor` 开始,而 SessionStart 注入的提示,让
+操作者**从已安装的缓存里**调用它。
+
+**发生了什么。** doctor 报了六项检查,全 PASS,其中包括 `cache matches source`。而
+就在那一刻,缓存与仓库之间有三个文件不同步。
+
+**漂移。** `PLUGIN_DIR` 缺省解析为脚本自己所在目录的上一级,`install_path` 从
+`installed_plugins.json` 读出。从缓存里调用——也就是文档指定的调用方式——这两者是
+同一棵树,比对循环于是把每个文件跟它自己哈希了一遍。`diff_count` 除了 0 不可能是
+别的。那个专为抓"缓存过期"而存在的检查,在它的默认路径上,**结构性地没有能力报出
+缓存过期**。
+
+**怎么浮出来的。** 不是从输出里——输出是绿的。是读了基准解析那几行,然后拿同一个
+脚本、换两个基准各跑一次:从缓存跑,`PASS`;用 `--plugin-dir` 指向仓库跑,
+`FAIL 3 file(s) differ`。同一批字节,两种裁决,其中一种是空的。
+
+**修法。** 当 `PLUGIN_DIR` 与 `install_path` 解析到同一棵树时,回退到 marketplace
+登记的源目录;当根本没有本地源可比时,报 WARN 而不是 PASS——**基准不存在不是"一致"
+的证据**。同时让 PASS 那行点名自己跟谁比的(`matches /path/to/source`),这样一个
+什么都没比的通过,就没地方藏了。
+
+**若未被抓住。** 没有不安全的后果:缓存只落后两个文档文件。代价是这个项目一直在别人
+的工具上记录的那一种,这次落到了自己身上。doctor 的设计**拒绝**报告运行时激活,
+理由是它证明不了——那条拒绝是这个脚本存在的全部意义。而就在那条拒绝的上一行,它正在
+报告一次自己从未做过的比对。一个在它被设计来严谨的地方严谨、在别处轻信的工具,花掉的
+正好是它挣来的那份信任。
 
 ---
 

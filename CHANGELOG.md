@@ -4,6 +4,35 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.9.1] — 2026-09-11
+
+### Fixed
+
+- **`acgm doctor`'s `cache matches source` was comparing the cache with itself.**
+  `PLUGIN_DIR` defaults to the script's own parent directory and `install_path`
+  comes from `installed_plugins.json`. Invoked from inside the installed cache —
+  which is exactly how the SessionStart line tells the operator to invoke it —
+  those two are one tree, so the loop hashed every file against itself and
+  `diff_count` could never be anything but zero.
+
+  Found with three files actually out of sync: the check reported PASS, and the
+  same bytes reported `FAIL 3 file(s) differ` the moment the baseline was pointed
+  at the repository instead (Case 17, E-033).
+
+  When the two resolve to the same tree, doctor now falls back to the
+  marketplace's registered source directory. When there is no local source to
+  compare against, it WARNs rather than passes — an absent baseline is not
+  evidence of agreement. And the PASS line names the tree it compared against, so
+  a pass that compared nothing has nowhere to hide.
+
+  This is the "configuration verified" state doctor reports on, and it was the
+  weakest of the four while looking like the most solid. Runtime activation is
+  unaffected: doctor still refuses to report it at all.
+
+### Added
+
+- Case 17 and E-033 in `CASES.md` / `EVIDENCE.md`, both language halves.
+
 ## [0.9.0] — 2026-08-06
 
 ### Added
