@@ -829,3 +829,20 @@ author 邮箱生成的,不会列出一个模型——所以署名写在这里,�
 
 提炼自一个真实长周期 AI 驱动开发项目的治理实践。已剥离全部业务特质——仓库内**不含也
 永不接受**任何具体项目的业务/机密内容(这本身就是 §④ 范围边界的应用)。
+
+### 0.9.3: SessionEnd status and durable obligations
+
+Draft and uncommitted-worktree reminders are stderr-only. They never create or
+append to OPEN_OBLIGATIONS.md. Unresolved VERIFY-AFTER declarations are appended
+once per session, transcript turn, and full declaration; repeated SessionEnd
+calls leave the file bytes and mtime unchanged when nothing new is owed.
+Existing manual obligations and older reminders are preserved without cleanup or
+automatic resolution. Drafts and human rulings are never modified. This retains
+the existing tool-count heuristic, which cannot prove semantic verification.
+It does not claim concurrency-safe multi-writer deduplication or recognize an
+old unmarked entry as the same declaration. Start a new Claude Code session after
+updating the plugin so its hooks use the new version.
+
+中文：0.9.3 将未提交改动、待裁定草案改为只输出状态提示；只有待核验声明写入长期义务账本，
+同一会话、同一轮次、同一声明不重复追加。没有新义务时不修改文件。保留旧提醒、真实义务、
+草案和人的裁定，不自动提交或清空账本。工具调用计数仍是启发式检查，不代表已经核验成功。

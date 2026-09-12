@@ -77,9 +77,7 @@ class LedgerTests(unittest.TestCase):
 
             self.assertIn("C-20260806-01", result.stderr)
             self.assertIn("nobody has ruled on", result.stderr)
-            # And it is persisted, because this project opted in.
-            recorded = (root / ".governance" / "OPEN_OBLIGATIONS.md").read_text(encoding="utf-8")
-            self.assertIn("C-20260806-01", recorded)
+            self.assertFalse((root / ".governance" / "OPEN_OBLIGATIONS.md").exists())
 
     def test_draft_named_by_a_decision_is_not_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,6 +138,60 @@ class LedgerTests(unittest.TestCase):
             result = run_hook(root)
 
             self.assertNotIn("not in the repository", result.stderr)
+
+    def test_repeated_status_reports_preserve_existing_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git(root, "init", "--initial-branch=main")
+            ledger = root / ".governance"
+            (ledger / "claims").mkdir(parents=True)
+            claim = ledger / "claims" / "C-20260806-01.md"
+            claim.write_text(CLAIM)
+            obligations = ledger / "OPEN_OBLIGATIONS.md"
+            original = "# Manual obligation\nVerify deployment.\nUser ruling: keep this open.\n"
+            obligations.write_text(original)
+            stamp = obligations.stat().st_mtime_ns
+            for _ in range(5):
+                result = run_hook(root)
+                self.assertEqual(result.returncode, 0)
+                self.assertIn("not in the repository", result.stderr)
+                self.assertIn("nobody has ruled on", result.stderr)
+                self.assertEqual(obligations.read_text(), original)
+                self.assertEqual(obligations.stat().st_mtime_ns, stamp)
+                self.assertEqual(claim.read_text(), CLAIM)
+
+    def test_real_obligation_is_persisted_once_per_declaration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".governance").mkdir()
+            obligations = root / ".governance" / "OPEN_OBLIGATIONS.md"
+            obligations.write_text("# Manual obligation\nKeep this.\n")
+            transcript = root / "session.jsonl"
+            def write_transcript(check: str) -> None:
+                transcript.write_text(json.dumps({"message": {"content": [
+                    {"type": "text", "text": "ACGM-VERIFY-AFTER: " + check},
+                    {"type": "tool_use", "name": "Bash", "input": {"command": "true"}}
+                ]}}) + "\n")
+            write_transcript("check service")
+            payload = {"transcript_path": str(transcript), "session_id": "session-one"}
+            run_hook(root, payload)
+            first = obligations.read_bytes()
+            stamp = obligations.stat().st_mtime_ns
+            self.assertIn(b"check service", first)
+            for _ in range(5):
+                run_hook(root, payload)
+                self.assertEqual(obligations.read_bytes(), first)
+                self.assertEqual(obligations.stat().st_mtime_ns, stamp)
+            # A different session can owe the same check again.
+            payload["session_id"] = "session-two"
+            run_hook(root, payload)
+            self.assertEqual(obligations.read_text().count("  - check service"), 2)
+            # A changed declaration must not be suppressed either.
+            write_transcript("check storage")
+            run_hook(root, payload)
+            self.assertIn("check storage", obligations.read_text())
+            self.assertTrue(obligations.read_text().startswith("# Manual obligation\nKeep this.\n"))
+            self.assertNotIn("not in the repository", obligations.read_text())
 
     def test_hook_never_fails_the_session(self) -> None:
         """A broken ledger must not take the session down with it."""

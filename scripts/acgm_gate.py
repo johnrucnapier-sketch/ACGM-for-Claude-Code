@@ -24,6 +24,7 @@ away from: unverified obligations, unruled drafts, and an uncommitted ledger.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -609,7 +610,7 @@ def assistant_turns(path: str) -> list[tuple[int, str, str]]:
     return turns
 
 
-def unresolved_obligations(path: str) -> list[str]:
+def unresolved_obligations(path: str) -> list[tuple[int, str]]:
     """VERIFY-AFTER promises with no room left for the check to have run.
 
     A declaration is settled only if at least two tool calls follow it: the
@@ -630,7 +631,7 @@ def unresolved_obligations(path: str) -> list[str]:
         if following == 1:
             match = re.search(r"ACGM-VERIFY-AFTER\s*[:：]\s*(.+)", payload)
             promise = match.group(1).strip() if match else "(unreadable)"
-            open_promises.append(promise[:160])
+            open_promises.append((index, promise))
     return open_promises
 
 
@@ -695,11 +696,9 @@ def uncommitted_ledger(ledger_dir: str) -> bool:
 def session_end() -> None:
     """Report what this session is about to walk away from.
 
-    Two independent debts, reported together because they share the only moment
-    a session has left:
-
-      obligations  a VERIFY-AFTER promise no later tool call could have kept
-      ledger       drafts nobody ruled on, and ledger edits not yet committed
+    Persist unresolved VERIFY-AFTER declarations once per session and turn.
+    Drafts and uncommitted ledger edits are transient status, printed only;
+    writing those reminders into the ledger would trigger the next reminder.
 
     Everything here is decidable from the filesystem and the transcript. The
     hook has no judgment: it cannot tell which threads are still open, so it
@@ -728,7 +727,7 @@ def session_end() -> None:
     lines: list[str] = []
     if promises:
         lines += ["ACGM — session ending with unverified post-action obligations:", ""]
-        lines += [f"  - {promise}" for promise in promises]
+        lines += [f"  - {promise[:160]}" for _, promise in promises]
         lines += [
             "",
             "Each of these declared a check that no later tool call could have run.",
@@ -757,11 +756,27 @@ def session_end() -> None:
         ]
     report = "\n".join(lines)
 
-    if has_ledger:
+    if has_ledger and promises:
         try:
-            with open(os.path.join(ledger_dir, "OPEN_OBLIGATIONS.md"), "a", encoding="utf-8") as fh:
-                fh.write(f"\n## Session ended with open obligations\n\n{report}")
-        except OSError:
+            obligations_path = os.path.join(ledger_dir, "OPEN_OBLIGATIONS.md")
+            try:
+                with open(obligations_path, encoding="utf-8") as fh:
+                    existing = fh.read()
+            except FileNotFoundError:
+                existing = ""
+            # Stable on retries and transcript growth; identical checks in a
+            # different session or at a different turn remain distinct debts.
+            session = payload.get("session_id") or os.path.realpath(transcript)
+            additions = []
+            for index, promise in promises:
+                key = json.dumps([session, index, promise], ensure_ascii=False)
+                marker = "<!-- acgm-obligation:" + hashlib.sha256(key.encode()).hexdigest() + " -->"
+                if marker not in existing:
+                    additions.append(f"{marker}\n  - {promise[:160]}\n")
+            if additions:
+                with open(obligations_path, "a", encoding="utf-8") as fh:
+                    fh.write("\n## Session ended with open obligations\n\n" + "\n".join(additions))
+        except (OSError, UnicodeError):
             pass
     sys.stderr.write(report)
     sys.exit(0)
