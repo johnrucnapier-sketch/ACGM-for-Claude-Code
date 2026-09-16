@@ -3,7 +3,7 @@
 
 Invoked by pretool-destructive-bash.sh only after the cheap whitelist matched.
 Reads the PreToolUse payload on stdin, emits a PreToolUse hook decision on
-stdout, and never exits non-zero: a broken gate must not block work.
+stdout. Policy/runtime failures in PreToolUse fail closed.
 
 Three checks, all decidable from the tool call and the transcript. None of them
 can be satisfied by prose alone -- that is the whole point. v0.1 grepped for the
@@ -31,105 +31,12 @@ import re
 import subprocess
 import sys
 
-FIELDS = (
-    "ACGM-EVIDENCE",
-    "ACGM-CURRENT-STATE",
-    "ACGM-VERIFY-AFTER",
-    "ACGM-ROLLBACK",
+from acgm_policy import (
+    EVIDENCE_WINDOW, SUBSTITUTION, split_command, operative_segments,
+    missing_fields, fields_name_this_target, target_tokens, remote_needs_gate,
+    has_prior_evidence, execution_problems, load_guards, ToolCall,
+    bash_is_read_only, evidence_targets, operation_targets, literal_path, FIELD_COMMENT,
 )
-
-# A field whose value is a template, a shrug, or an inherited claim is absent.
-PLACEHOLDER = re.compile(
-    r"^\s*(?:<[^>]*>|\(.*\)|todo|tbd|n/?a|none|-+|\.\.\.|待定|略|同上|见上)\s*$",
-    re.IGNORECASE,
-)
-MIN_FIELD_CHARS = 12
-
-# Segment separators that bind separate operations into one invocation.
-SEPARATORS = re.compile(r";|&&|\|\||(?<!\|)\|(?!\|)|\n")
-# Segments that only prepare the environment are not separate operations.
-PREPARATORY = re.compile(r"^\s*(?:cd|export|set|umask|source|\.)\b")
-SUBSTITUTION = re.compile(r"\$\(|`")
-
-# Bash that reads without changing state. Used to confirm evidence exists.
-READ_ONLY_BASH = re.compile(
-    r"^\s*(?:ls|cat|head|tail|wc|stat|file|find|grep|rg|ps|df|du|which|type|env|"
-    r"pwd|echo|printf|date|shasum|sha256sum|md5|diff|jq|sort|uniq|awk|sed(?!\s+-i)|"
-    r"git\s+(?:status|log|show|diff|ls-tree|ls-files|rev-parse|rev-list|describe|"
-    r"branch(?!\s+-[dD])|remote|config\s+--get|cat-file|hash-object|fetch)|"
-    r"claude\s+plugin\s+(?:list|details|validate)|npm\s+(?:view|ls)|python3?\s+-c|"
-    # Remote inspections. Without these every `ssh host 'uptime'` would reach the
-    # gate, and a gate that fires on routine checks is one the operator learns to
-    # route around (E-021).
-    r"uptime|hostname|whoami|id|nproc|free|lscpu|lsblk|nvcc|"
-    r"tmux\s+(?:ls|list-sessions|list-windows|list-panes|has-session)|"
-    r"systemctl\s+(?:status|is-active|is-enabled|list-units)|"
-    r"docker\s+(?:ps|images|logs|inspect)|"
-    r"kubectl\s+(?:get|describe|logs))\b"
-)
-
-# `nvidia-smi` reads, until it is asked to write: -pl sets a power limit, -ac and
-# -lgc pin clocks, -pm changes persistence mode, -r resets the device. Listing the
-# query forms and requiring the segment to end there keeps the write forms out,
-# where a bare `nvidia-smi\b` alternative above would have admitted all of them.
-NVIDIA_SMI_READ_ONLY = re.compile(
-    r"^\s*nvidia-smi"
-    r"(?:\s+(?:-L|--list-gpus|-q|--query|--query-[\w-]+=\S*|--format=\S*|"
-    r"-i\s*\S+|--id=\S+|-l\s*\d*|-f\s*\S+))*\s*$"
-)
-
-# Commands whose effect lands where this session cannot look afterwards. The verb
-# table in the wrapper cannot classify these: what `ssh host 'bash run.sh'` does
-# is decided by a file on another machine, and no amount of reading this string
-# will say what that file does.
-REMOTE_EXEC = re.compile(r"^\s*(?:ssh|scp|rsync)\b")
-
-# Remote payloads are rarely one verb. Measured against this operator's own
-# history on 2026-09-11, the commonest shapes are polling loops and status
-# probes -- `until pgrep -f job; do sleep 10; done`, `for f in a b; do tail $f;
-# done`. Per-segment verb matching cannot see that those change nothing, and
-# gating them all would have denied 42% of every remote command ever run here.
-# That is the rate at which a gate stops being read and starts being routed
-# around (E-021), so the structure has to be understood rather than refused.
-STRUCTURE = re.compile(r"^\s*(?:do|done|then|else|fi|esac|;;|\{|\}|\(\)|:)\s*$")
-# Prefixes that sit in front of the real command without being one. Stripping
-# them and classifying what is left is strictly safer than matching on them:
-# `sudo rm -rf x` becomes `rm -rf x` and is still refused, while `sudo sshd -T`
-# becomes a config dump and stops being treated as an unknown.
-PREFIXES = (
-    re.compile(r"^\s*(?:do|then|else)\s+"),
-    re.compile(r"^\s*(?:while|until|if|elif)\s+"),
-    re.compile(r"^\s*sudo(?:\s+-[A-Za-z]+(?:\s+\S+)?)*\s+"),
-    re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+"),
-)
-LOOP_HEAD = re.compile(r"^\s*for\s+\w+\s+in\b")
-COND_HEAD = re.compile(r"^\s*(?:while|until|if|elif)\s+")
-# Read-only verbs that only ever appear inside such payloads.
-READ_ONLY_HELPER = re.compile(
-    r"^\s*(?:sleep|pgrep|pidof|tr|cut|paste|test|\[|true|false|seq|nl|column|"
-    r"basename|dirname|readlink|realpath|numfmt|md5sum|sha1sum|"
-    r"ss|ip\s+(?:a|addr|link|route)\b|lsof|netstat|uname|"
-    r"systemctl\s+list-unit-files|pip3?\s+(?:show|list|--version)|"
-    r"python3?\s+-m\s+pip\s+(?:show|list))\b"
-)
-# Deliberately absent from that list, each caught by a test: a bare `nvidia-smi`
-# would have admitted `nvidia-smi -pl 300`, which rewrites a power limit;
-# `watch` and `timeout N` take an arbitrary command as their argument, so
-# matching on the wrapper says nothing about what runs underneath it.
-
-# ssh options that consume the word after them; anything else short-circuits to
-# the host. Getting this wrong in the permissive direction would read the host as
-# the payload, so unknown flags are treated as taking no argument.
-SSH_OPTS_WITH_ARG = frozenset(
-    "-b -c -D -E -e -F -I -i -J -L -l -m -O -o -p -Q -R -S -W -w".split()
-)
-
-# A transfer writes on the far side. These two say it will not.
-DRY_RUN = re.compile(r"(?:^|\s)(?:--dry-run|-n)(?:\s|$)")
-
-READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "NotebookRead", "WebFetch", "WebSearch"}
-EVIDENCE_WINDOW = 12
-
 
 def emit(decision: str | None, reason: str = "") -> None:
     """Write a hook result and stop. `None` means pass through silently."""
@@ -180,369 +87,121 @@ def last_assistant_text(path: str) -> str:
     return text[-8000:]
 
 
-def recent_tool_uses(path: str, limit: int) -> list[tuple[str, str]]:
-    """(tool_name, command) for the most recent tool calls, oldest first."""
-    calls: list[tuple[str, str]] = []
+def recent_tool_uses(path: str, limit: int | None, strict: bool = False) -> list[ToolCall]:
+    """Claude adapter: normalize calls and successful matching tool results.
+
+    A request alone is not evidence of execution. Invalid/unreadable transcripts
+    contribute no evidence. Keep one extra call until the core excludes current.
+    """
+    calls = []
+    results = {}
+    seen = set()
+    position = 0
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8") as handle:
             for line in handle:
-                try:
-                    entry = json.loads(line)
-                except ValueError:
+                if not line.strip():
                     continue
-                message = entry.get("message")
+                entry = json.loads(line)
+                if not isinstance(entry, dict):
+                    raise ValueError("invalid entry")
+                message = entry.get("message", {})
                 if not isinstance(message, dict):
                     continue
-                blocks = message.get("content")
+                blocks = message.get("content", [])
                 if not isinstance(blocks, list):
                     continue
                 for block in blocks:
-                    if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    position += 1
+                    if not isinstance(block, dict):
                         continue
-                    payload = block.get("input") or {}
-                    command = payload.get("command", "") if isinstance(payload, dict) else ""
-                    calls.append((block.get("name", ""), command))
-    except OSError:
+                    if entry.get("type") == "assistant" and block.get("type") == "tool_use":
+                        data = block.get("input") or {}
+                        if not isinstance(data, dict):
+                            raise ValueError("invalid tool input")
+                        call_id = block.get("id", "")
+                        if call_id and call_id in seen:
+                            raise ValueError("duplicate tool id")
+                        if call_id:
+                            seen.add(call_id)
+                        calls.append(ToolCall(
+                            name=block.get("name", ""), command=data.get("command", ""),
+                            path=data.get("file_path", data.get("notebook_path", "")),
+                            call_id=call_id, started=position,
+                        ))
+                    elif entry.get("type") == "user" and block.get("type") == "tool_result":
+                        call_id = block.get("tool_use_id", "")
+                        if call_id in seen:
+                            metadata = entry.get("toolUseResult")
+                            failed = block.get("is_error", False) is not False
+                            if isinstance(metadata, dict):
+                                failed |= bool(metadata.get("is_error") or metadata.get("interrupted"))
+                                exit_code = metadata.get("exitCode", metadata.get("exit_code", 0))
+                                failed |= exit_code != 0
+                            if call_id in results:
+                                raise ValueError("duplicate result")
+                            results[call_id] = (not failed, position)
+    except (OSError, ValueError, UnicodeError, TypeError):
+        if strict:
+            raise ValueError("unreadable or invalid transcript")
         return []
-    return calls[-limit:]
+    selected = calls if limit is None else calls[-(limit + 1):]
+    return [ToolCall(c.name, c.command, c.path, c.call_id,
+                     results.get(c.call_id, (False, -1))[0], c.started,
+                     results.get(c.call_id, (False, -1))[1]) for c in selected]
 
 
-FIELD_COMMENT = re.compile(r"^\s*#\s*(ACGM-[A-Z-]+)\s*[:：]\s*(.*)$")
-
-
-def split_command(command: str) -> tuple[str, str]:
-    """Separate the ACGM field comments from the operation itself.
-
-    The fields live in the command from v0.8. They used to be read from the
-    agent's most recent message, which put the check on the wrong side of a race:
-    the transcript is not always flushed when the hook runs, so identical calls
-    were sometimes accepted and sometimes denied for "missing fields" (E-027).
-    Worse, a stale read surfaced an *earlier* turn's fields and authorised an
-    operation they were never written for (E-025).
-
-    The command is the one thing the hook always receives intact, and it is the
-    thing being authorised. Fields carried on it cannot be stale, cannot be
-    missing due to timing, and cannot belong to a different call.
-    """
-    fields, rest = [], []
-    for line in command.splitlines():
-        (fields if FIELD_COMMENT.match(line) else rest).append(line)
-    return "\n".join(fields), "\n".join(rest)
-
-
-def missing_fields(field_block: str) -> list[str]:
-    present = {}
-    for line in field_block.splitlines():
-        match = FIELD_COMMENT.match(line)
-        if match:
-            present[match.group(1)] = match.group(2).strip().strip("`").strip()
-    absent = []
-    for field in FIELDS:
-        value = present.get(field, "")
-        if len(value) < MIN_FIELD_CHARS or PLACEHOLDER.match(value):
-            absent.append(field)
-    return absent
-
-
-# Words that name the tool, not the thing being operated on.
-NOT_A_TARGET = {
-    "sudo", "env", "time", "xargs", "git", "npm", "pip", "brew", "claude", "plugin",
-    "marketplace", "systemctl", "launchctl", "install", "uninstall", "update",
-    "remove", "enable", "disable", "reset", "clean", "push", "force", "branch",
-    "checkout", "rebase", "stash", "drop", "clear", "table", "database", "from",
-    "delete", "truncate", "shred", "rmdir", "pkill", "shutdown", "reboot", "mkfs",
-    "filter", "refresh", "global", "recursive", "hard",
-}
-TOKEN = re.compile(r"[A-Za-z0-9_.@:~/-]{3,}")
-
-
-def target_tokens(command: str) -> list[str]:
-    """Words from the command that name what it acts on.
-
-    Used to bind the four fields to *this* operation. Flags and the names of the
-    tools themselves are excluded; what remains is paths, ids, branch names and
-    similar operands.
-    """
-    # The shell filter already stripped heredoc bodies and /dev/null redirects
-    # before deciding this was destructive; here the raw invocation is fine,
-    # because any token in it is still a token of *this* call.
-    tokens = []
-    for raw in TOKEN.findall(command):
-        word = raw.strip("'\"`,;")
-        if not word or word.startswith("-"):
-            continue
-        if word.lower() in NOT_A_TARGET:
-            continue
-        if any(ch in word for ch in "/@:") or len(word) >= 5:
-            tokens.append(word)
-    return tokens
-
-
-def fields_name_this_target(text: str, command: str) -> bool:
-    """True if the fields mention something the command actually acts on.
-
-    Without this, the gate can be satisfied by evidence written for an earlier
-    operation: the fields stay the most recent assistant text, so the next
-    destructive call inherits them. Observed 2026-08-05 — a command passed on
-    fields written for the previous one, and the pass was initially misread as
-    the command not being destructive at all.
-
-    A basename also counts, so a field may cite a path in a different but
-    equivalent form.
-    """
-    tokens = target_tokens(command)
-    if not tokens:
-        return True  # nothing identifiable to bind to; do not invent a failure
-    haystack = text.lower()
-    for token in tokens:
-        needle = token.lower()
-        if needle in haystack:
-            return True
-        base = needle.rstrip("/").rsplit("/", 1)[-1]
-        if len(base) >= 4 and base in haystack:
-            return True
-    return False
-
-
-def split_segments(command: str) -> list[str]:
-    """Split on shell separators, ignoring any that sit inside quotes.
-
-    A ';' or a newline inside a quoted argument is data, not an operation
-    boundary -- the shell does not treat it as one either. Splitting on it made a
-    single `python3 -c "..."` look like twenty-two operations, and STANDALONE
-    then had no satisfiable form: no way of writing that command could pass. A
-    gate that states an impossible requirement teaches the operator to route
-    around it (E-021), which is the failure this project is least able to afford.
-
-    Note what is deliberately *not* done here: the quoted body is not stripped
-    before the destructive filter runs. `sh -c "rm -rf /"` carries its verb
-    inside quotes, and dropping it would trade a false positive for a false
-    negative. Per this gate's own policy, misses are the worse error.
-
-    Unbalanced quotes fall back to the naive split, which over-segments. That
-    direction can only deny, never permit.
-    """
-    segments: list[str] = []
-    current: list[str] = []
-    quote = ""
-    index = 0
-    while index < len(command):
-        char = command[index]
-        if quote:
-            if char == "\\" and quote == '"' and index + 1 < len(command):
-                current.append(char)
-                current.append(command[index + 1])
-                index += 2
-                continue
-            if char == quote:
-                quote = ""
-            current.append(char)
-            index += 1
-            continue
-        if char in "'\"":
-            quote = char
-            current.append(char)
-            index += 1
-            continue
-        if char in ";\n":
-            segments.append("".join(current))
-            current = []
-            index += 1
-            continue
-        if command.startswith("&&", index) or command.startswith("||", index):
-            segments.append("".join(current))
-            current = []
-            index += 2
-            continue
-        if char == "|":
-            segments.append("".join(current))
-            current = []
-            index += 1
-            continue
-        current.append(char)
-        index += 1
-    if quote:
-        return SEPARATORS.split(command)
-    segments.append("".join(current))
-    return segments
-
-
-def operative_segments(command: str) -> list[str]:
-    """Segments that actually do something, ignoring environment setup."""
-    return [
-        segment.strip()
-        for segment in split_segments(command)
-        if segment.strip() and not PREPARATORY.match(segment)
-    ]
-
-
-def bash_is_read_only(command: str) -> bool:
-    """Whether every operative segment of a Bash call only reads.
-
-    `READ_ONLY_BASH` is anchored, so it answers "does this command *start* with a
-    read-only verb". Applied to a whole invocation that is the wrong question:
-    `cd repo && git status` never matched, which made the most common shape of a
-    real inspection invisible to the evidence check. Ask it per segment instead --
-    `PREPARATORY` already drops the `cd` -- and require *all* of them to pass, so
-    `cd repo && ls && <mutation>` still does not count as evidence.
-    """
-    segments = operative_segments(command or "")
-    return bool(segments) and all(
-        READ_ONLY_BASH.match(segment) or NVIDIA_SMI_READ_ONLY.match(segment)
-        for segment in segments
+def configured_guards(payload: dict) -> list[tuple[str, str]]:
+    # Never anchor to payload.cwd: Claude updates it after a shell cd.
+    path = os.environ.get("ACGM_POLICY_CONFIG")
+    if path is not None:
+        if not os.path.isabs(path):
+            raise ValueError("ACGM_POLICY_CONFIG must be absolute")
+        return load_guards(path)
+    anchor = os.environ.get("CLAUDE_PROJECT_DIR", "")
+    if not os.path.isabs(anchor) or not os.path.isdir(anchor):
+        raise ValueError("stable project anchor unavailable; set ACGM_POLICY_CONFIG")
+    anchor = os.path.realpath(anchor)
+    # Resolve only the repository containing the stable startup directory.
+    # No arbitrary ancestor policy search; non-Git projects stop at startup.
+    result = subprocess.run(
+        ["git", "-C", anchor, "rev-parse", "--show-toplevel"],
+        env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, "LC_ALL": "C"},
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5,
     )
+    if result.returncode == 0:
+        root = os.path.realpath(result.stdout.strip())
+        if not os.path.isabs(result.stdout.strip()) or os.path.commonpath([root, anchor]) != root:
+            raise ValueError("invalid Git project boundary")
+        anchor = root
+    elif "not a git repository" not in result.stderr:
+        raise ValueError("project boundary resolution failed")
+    governance = os.path.join(anchor, ".governance")
+    try:
+        os.lstat(governance)
+    except FileNotFoundError:
+        return []  # ordinary project with no governance configuration
+    if os.path.islink(governance):
+        raise ValueError("project governance symlink requires explicit policy")
+    # Listing distinguishes absent optional config from inaccessible governance.
+    if "remote-path-guards.json" not in os.listdir(governance):
+        return []
+    path = os.path.join(governance, "remote-path-guards.json")
+    if os.path.islink(path):
+        raise ValueError("project policy symlink requires explicit policy")
+    return load_guards(path)
 
 
-def shell_words(text: str) -> list[tuple[str, bool]] | None:
-    """Split into words the way a shell would, keeping "was this quoted".
-
-    Returns None when a quote never closes. That is not a parse to be guessed at:
-    an unreadable command must reach the gate, never slip past it.
-    """
-    words: list[tuple[str, bool]] = []
-    current: list[str] = []
-    quoted = False
-    started = False
-    quote = ""
-    index = 0
-    while index < len(text):
-        char = text[index]
-        if quote:
-            if char == "\\" and quote == '"' and index + 1 < len(text):
-                current.append(text[index + 1])
-                index += 2
-                continue
-            if char == quote:
-                quote = ""
-                index += 1
-                continue
-            current.append(char)
-            index += 1
-            continue
-        if char in "'\"":
-            quote = char
-            quoted = True
-            started = True
-            index += 1
-            continue
-        if char.isspace():
-            if started:
-                words.append(("".join(current), quoted))
-                current = []
-                quoted = False
-                started = False
-            index += 1
-            continue
-        current.append(char)
-        started = True
-        index += 1
-    if quote:
-        return None
-    if started:
-        words.append(("".join(current), quoted))
-    return words
-
-
-def ssh_payload(segment: str) -> str | None:
-    """What ssh will run on the far side.
-
-    None means nothing will: a bare connection executes no remote command. The
-    empty string means the payload could not be read, which the caller must treat
-    as a reason to gate rather than a reason to relax.
-    """
-    words = shell_words(segment)
-    if words is None:
-        return ""
-    index = 1  # the verb itself
-    while index < len(words):
-        word, was_quoted = words[index]
-        if was_quoted or not word.startswith("-"):
-            break
-        if word in SSH_OPTS_WITH_ARG:
-            index += 2
-            continue
-        index += 1
-    if index >= len(words):
-        return None  # options only, no host
-    index += 1  # the host
-    if index >= len(words):
-        return None  # bare connection
-    rest = words[index:]
-    if len(rest) == 1:
-        return rest[0][0]
-    return " ".join(word for word, _ in rest)
-
-
-def payload_is_read_only(payload: str) -> bool:
-    """Whether a remote payload only reads, understanding shell structure.
-
-    Kept separate from `bash_is_read_only` on purpose. That function answers a
-    narrower question -- does this local invocation count as evidence -- and
-    widening it here would quietly widen what counts as evidence everywhere.
-
-    A command substitution makes the answer unknowable from the text, and
-    unknowable is not read-only.
-    """
-    if not payload.strip() or SUBSTITUTION.search(payload):
-        return False
-    segments = [
-        segment.strip()
-        for segment in split_segments(payload)
-        if segment.strip() and not PREPARATORY.match(segment)
-    ]
-    if not segments:
-        return False
-    for segment in segments:
-        if STRUCTURE.match(segment) or LOOP_HEAD.match(segment):
-            continue
-        stripped = segment
-        for _ in range(6):  # bounded: `do sudo VAR=1 cmd` nests, runaway does not
-            before = stripped
-            for prefix in PREFIXES:
-                stripped = prefix.sub("", stripped, count=1)
-            if stripped == before:
-                break
-        if not stripped.strip():
-            continue
-        if (
-            READ_ONLY_BASH.match(stripped)
-            or READ_ONLY_HELPER.match(stripped)
-            or NVIDIA_SMI_READ_ONLY.match(stripped)
-        ):
-            continue
-        return False
-    return True
-
-
-def remote_needs_gate(command: str) -> bool:
-    """Whether a remote-execution command has to face the gate.
-
-    The verb table in the wrapper answers "did the operator type something known
-    to be destructive". For remote work that is the wrong question, and answering
-    it let `ssh rig 'bash run_quant.sh'` start an irreversible job in silence
-    while `ssh rig 'rm -rf x'` was caught -- the second only because its verb
-    survived inside the quotes.
-
-    So ask the payload instead, with the same rules used everywhere else. A
-    remote inspection stays free. Anything this function cannot show to be
-    read-only reaches the gate, including anything it cannot read at all: the
-    gate's claim here is not "this destroys something", it is "from here, this
-    cannot be told apart from something that does".
-    """
-    for segment in operative_segments(command):
-        if not REMOTE_EXEC.match(segment):
-            continue
-        verb = segment.split()[0]
-        if verb in ("scp", "rsync"):
-            if DRY_RUN.search(segment):
-                continue
-            return True
-        payload = ssh_payload(segment)
-        if payload is None:
-            continue
-        if not payload_is_read_only(payload):
-            return True
-    return False
+def preflight() -> None:
+    payload = json.load(sys.stdin)
+    command = payload["tool_input"]["command"]
+    _, operation = split_command(command)
+    problems = execution_problems(operation, configured_guards(payload), payload.get("cwd") or os.getcwd())
+    if problems:
+        emit("deny", "ACGM gate — " + "\n".join(problems))
+    from acgm_policy import command_words, split_segments
+    ordinary_delete = any((w := command_words(s)) and w[0][0] == "rm" for s in split_segments(operation))
+    print(json.dumps({"needs_gate": remote_needs_gate(operation) or ordinary_delete}))
 
 
 def remote_probe() -> None:
@@ -558,25 +217,6 @@ def remote_probe() -> None:
     command = (payload.get("tool_input") or {}).get("command", "")
     _, operation = split_command(command)
     sys.exit(0 if remote_needs_gate(operation) else 1)
-
-
-def has_prior_evidence(calls: list[tuple[str, str]], gated_command: str = "") -> bool:
-    """Whether a read-only call already happened before the one being gated.
-
-    PreToolUse fires *before* the call is written to the transcript, so the last
-    entry is usually the previous call, not this one. Dropping it blindly threw
-    away the single most useful piece of evidence -- the inspection immediately
-    before -- and denied three consecutive, correctly evidenced invocations
-    (2026-08-06, this gate blocking its own release's installation). Drop the
-    last entry only when it really is the command being gated.
-    """
-    prior = calls[:-1] if calls and calls[-1][1] == gated_command else calls
-    for name, command in prior:
-        if name in READ_ONLY_TOOLS:
-            return True
-        if name == "Bash" and bash_is_read_only(command or ""):
-            return True
-    return False
 
 
 def assistant_turns(path: str) -> list[tuple[int, str, str]]:
@@ -611,28 +251,37 @@ def assistant_turns(path: str) -> list[tuple[int, str, str]]:
 
 
 def unresolved_obligations(path: str) -> list[tuple[int, str]]:
-    """VERIFY-AFTER promises with no room left for the check to have run.
-
-    A declaration is settled only if at least two tool calls follow it: the
-    operation itself, then the verification. One call means the operation ran
-    and nothing checked it. Zero means the operation never happened, which is
-    not an obligation.
-
-    This is deliberately generous -- it cannot tell a real verification from any
-    other call. It exists so a session cannot end silently on a promise, not to
-    prove the promise was kept.
-    """
-    turns = assistant_turns(path)
-    open_promises = []
-    for index, kind, payload in turns:
-        if kind != "text" or "ACGM-VERIFY-AFTER" not in payload:
+    """Post-action checks require successful, later, exact-target tool facts."""
+    try:
+        calls = recent_tool_uses(path, None, strict=True)
+    except ValueError:
+        return [(-1, "UNVERIFIED — transcript unavailable or invalid")]
+    obligations = []
+    for index, mutation in enumerate(calls):
+        if mutation.name != "Bash" or bash_is_read_only(mutation.command):
             continue
-        following = sum(1 for i, k, _ in turns if i > index and k == "tool")
-        if following == 1:
-            match = re.search(r"ACGM-VERIFY-AFTER\s*[:：]\s*(.+)", payload)
-            promise = match.group(1).strip() if match else "(unreadable)"
-            open_promises.append((index, promise))
-    return open_promises
+        fields, operation = split_command(mutation.command)
+        values = {m[1]: m[2].strip() for line in fields.splitlines()
+                  if (m := FIELD_COMMENT.match(line))}
+        promise = values.get("ACGM-VERIFY-AFTER")
+        if promise is None:
+            continue
+        targets = operation_targets(operation)
+        # Free prose describes the check; it cannot supply evidence or silently
+        # substitute an unrelated target. Unsupported targets stay unresolved.
+        declared = {literal_path(w.rstrip(".,;")) for w in target_tokens(promise)}
+        observed = set()
+        if mutation.finished >= 0 and targets and all(p in declared for _, p in targets):
+            for check in calls[index + 1:]:
+                if not check.succeeded or check.started <= mutation.finished:
+                    continue
+                if check.name == "Bash" and bash_is_read_only(check.command):
+                    observed |= evidence_targets(check.command)
+                elif check.name in ("Read", "NotebookRead") and (p := literal_path(check.path)):
+                    observed.add(("", p))
+        if not targets or not targets.issubset(observed):
+            obligations.append((index, promise or "UNVERIFIED — empty verification requirement"))
+    return obligations
 
 
 CLAIM_ID = re.compile(r"C-\d{8}-\d{2}")
@@ -708,10 +357,11 @@ def session_end() -> None:
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError):
+        sys.stderr.write("ACGM — UNVERIFIED: unreadable SessionEnd input\n")
         sys.exit(0)
 
     transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    promises = unresolved_obligations(transcript) if transcript else []
+    promises = unresolved_obligations(transcript) if transcript else [(-1, "UNVERIFIED — missing transcript")]
 
     # Persist only where the project already opted into governance scaffolding.
     # Creating files in someone's repository uninvited is the behaviour v0.1's
@@ -730,7 +380,7 @@ def session_end() -> None:
         lines += [f"  - {promise[:160]}" for _, promise in promises]
         lines += [
             "",
-            "Each of these declared a check that no later tool call could have run.",
+            "No successful later tool result establishes each declared exact target.",
             "The operation is not done; it is unverified. Carry this into the next",
             "session and verify before building on it.",
             "",
@@ -786,13 +436,13 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError):
-        emit(None)
+        emit("deny", "ACGM gate — unreadable hook input")
 
     command = (payload.get("tool_input") or {}).get("command", "")
     transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     field_block, operation = split_command(command)
 
-    problems: list[str] = []
+    problems: list[str] = execution_problems(operation, configured_guards(payload), payload.get("cwd") or os.getcwd())
 
     segments = operative_segments(operation)
     if len(segments) > 1:
@@ -825,14 +475,13 @@ def main() -> None:
             % ", ".join(sorted(set(target_tokens(operation)))[:6])
         )
 
-    if transcript:
-        calls = recent_tool_uses(transcript, EVIDENCE_WINDOW)
-        if calls and not has_prior_evidence(calls, command):
-            problems.append(
-                "EVIDENCE — no read-only tool call precedes this one in the last\n"
-                "    %d calls. Read the target's current state first; do not assert\n"
-                "    it." % EVIDENCE_WINDOW
-            )
+    calls = recent_tool_uses(transcript, EVIDENCE_WINDOW) if transcript else []
+    if not has_prior_evidence(calls, command, payload.get("tool_use_id", "")):
+        problems.append(
+            "EVIDENCE — no successful target-bound read-only tool evidence in the last "
+            f"{EVIDENCE_WINDOW} prior calls. Read the target or its direct parent on "
+            "the same host first. Missing, empty or unreadable transcript is not evidence."
+        )
 
     if not problems:
         # Complete gate: hand back to the harness's normal permission flow, where
@@ -859,19 +508,28 @@ def main() -> None:
         "    # ACGM-VERIFY-AFTER: the post-action check and its success signal\n"
         "    # ACGM-ROLLBACK: recovery if the target or the result is wrong\n"
         "    <the operation, on its own line>\n\n"
-        "They travel with the operation they authorise, so they cannot be stale and\n"
-        "cannot belong to a different call. Supplying them lifts this block; it does\n"
-        "not authorize the operation, which still goes to the human as usual.",
+        "Fields and successful target-bound tool evidence are both required.\n"
+        "Neither can waive an execution-context or parsing denial. A complete\n"
+        "gate still returns to the harness permission flow; it never authorizes.",
     )
 
 
 if __name__ == "__main__":
     mode = os.environ.get("ACGM_HOOK_MODE", "gate")
-    if mode == "sessionend":
-        session_end()
-    elif mode == "gate":
-        main()
-    elif mode == "remote":
-        remote_probe()
-    else:
-        emit(None)
+    try:
+        if mode == "sessionend":
+            session_end()
+        elif mode == "gate":
+            main()
+        elif mode == "remote":
+            remote_probe()
+        elif mode == "preflight":
+            preflight()
+        else:
+            emit("deny", "ACGM gate — unsupported hook mode")
+    except Exception:
+        if mode == "sessionend":
+            sys.stderr.write("ACGM — UNVERIFIED: SessionEnd policy failure\n")
+            sys.exit(0)
+        # Never expose paths/config contents or turn a policy failure into allow.
+        emit("deny", "ACGM gate — policy/configuration failure; inspect the local configuration and hook installation")

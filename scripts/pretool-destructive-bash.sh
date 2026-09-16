@@ -20,7 +20,7 @@
 #   3. At least one read-only tool call must already exist in this session
 #      before this one. Evidence must have been gathered, not asserted.
 #
-# The gate returns "ask". It never grants permission: a complete gate still
+# An incomplete gate returns "deny". It never grants permission: a complete gate still
 # goes to the human. Non-destructive Bash and every other tool pass silently.
 #
 # Whitelist policy: every CASES.md entry involving a destructive operation not
@@ -31,17 +31,31 @@
 
 set -eu
 
-input=$(cat 2>/dev/null || true)
-[ -n "$input" ] || { echo '{}'; exit 0; }
-
-command -v jq >/dev/null 2>&1 || { echo '{}'; exit 0; }
-command -v python3 >/dev/null 2>&1 || { echo '{}'; exit 0; }
+deny_runtime() {
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"ACGM gate unavailable or invalid input; restore the local hook before retrying"}}'
+  exit 0
+}
+input=$(cat 2>/dev/null) || deny_runtime
+[ -n "$input" ] || deny_runtime
+command -v jq >/dev/null 2>&1 || deny_runtime
+command -v python3 >/dev/null 2>&1 || deny_runtime
+printf '%s' "$input" | jq -e 'type == "object" and (.tool_name | type == "string")' >/dev/null 2>&1 || deny_runtime
 
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null || true)
 [ "$tool_name" = "Bash" ] || { echo '{}'; exit 0; }
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
-[ -n "$cmd" ] || { echo '{}'; exit 0; }
+[ -n "$cmd" ] || deny_runtime
+
+# Every Bash reaches the shared execution-context policy, including local cp
+# and redirects that the legacy destructive substring filter does not classify.
+preflight=$(printf '%s' "$input" | ACGM_HOOK_MODE=preflight python3 "$(dirname "$0")/acgm_gate.py") || deny_runtime
+printf '%s' "$preflight" | jq -e 'type == "object"' >/dev/null 2>&1 || deny_runtime
+if printf '%s' "$preflight" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null; then
+  printf '%s\n' "$preflight"
+  exit 0
+fi
+
 
 # ---- Strip heredoc bodies before matching ----
 # Observed 2026-08-05: a `git commit -F -` whose message *described* a recursive
@@ -118,30 +132,14 @@ case "$scan" in
   *"curl "*"| sh"*|*"curl "*"| bash"*|*"wget "*"| sh"*|*"wget "*"| bash"*) is_destructive=1 ;;
 esac
 
-# ---- Remote execution: decide from the payload, not from the verb ----
-# The table above answers "did the operator type something known to be
-# destructive". For work that runs on another machine that is the wrong
-# question. Observed 2026-09-11 in this operator's own activity log:
-# `ssh rig 'bash run_quant.sh'` and `ssh rig '<venv>/python graft.py'` passed in
-# silence and started irreversible jobs, while `ssh rig 'rm -rf x'` was caught --
-# the latter only because its verb happened to survive inside the quotes.
-#
-# So read what will actually run on the far side and apply the same read-only
-# rules to it. `ssh rig 'uptime'` stays free; anything that cannot be shown to be
-# read-only, including anything that cannot be parsed, goes to the gate.
-if [ "$is_destructive" = 0 ]; then
-  case "$scan" in
-    *ssh*|*scp*|*rsync*)
-      if printf '%s' "$input" \
-        | ACGM_HOOK_MODE=remote python3 "$(dirname "$0")/acgm_gate.py" >/dev/null 2>&1
-      then
-        is_destructive=1
-      fi
-      ;;
-  esac
+# Shared policy already classified transports; do not maintain another list.
+if printf '%s' "$preflight" | jq -e '.needs_gate == true' >/dev/null; then
+  is_destructive=1
 fi
 
 [ "$is_destructive" = 1 ] || { echo '{}'; exit 0; }
 
 # ---- Structural gate (python3; only reached for destructive commands) ----
-printf '%s' "$input" | ACGM_HOOK_MODE=gate python3 "$(dirname "$0")/acgm_gate.py"
+result=$(printf '%s' "$input" | ACGM_HOOK_MODE=gate python3 "$(dirname "$0")/acgm_gate.py") || deny_runtime
+printf '%s' "$result" | jq -e 'type == "object"' >/dev/null 2>&1 || deny_runtime
+printf '%s\n' "$result"

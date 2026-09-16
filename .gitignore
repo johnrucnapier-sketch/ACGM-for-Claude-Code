@@ -8,3 +8,14 @@ PUBLISHING.md
 # anything left here ships into the installed plugin (EVIDENCE E-016).
 __pycache__/
 *.py[cod]
+
+# Local runtime state and private release/audit artifacts.
+.in_use
+.pytest_cache/
+.cache/
+/ACGM-*-delivery/
+/ACGM-install*/
+/native-hook-evidence*/
+/native-hook-evidence*.tar.gz
+/rollback*/
+/.governance/remote-path-guards.json

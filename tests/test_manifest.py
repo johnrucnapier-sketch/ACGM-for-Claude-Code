@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shlex
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
@@ -105,8 +106,11 @@ class HookContract(unittest.TestCase):
                 for handler in group.get("hooks", []):
                     command = handler["command"]
                     self.assertIn("${CLAUDE_PLUGIN_ROOT}", command, f"{event}: use the root variable")
+                    expanded = command.replace("${CLAUDE_PLUGIN_ROOT}", str(REPO))
+                    argv = shlex.split(expanded)
+                    self.assertEqual(len(argv), 1, "hook executable must stay one argument in a root containing spaces")
                     relative = command.replace("${CLAUDE_PLUGIN_ROOT}/", "")
-                    script = REPO / relative
+                    script = Path(argv[0])
                     self.assertTrue(script.is_file(), f"{event}: missing {relative}")
                     self.assertTrue(script.stat().st_mode & 0o111, f"{event}: {relative} not executable")
 

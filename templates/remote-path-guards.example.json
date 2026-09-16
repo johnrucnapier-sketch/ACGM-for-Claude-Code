@@ -1,0 +1,8 @@
+{
+  "remote_path_guards": [
+    {
+      "host": "nas",
+      "prefixes": ["/protected/remote/path/"]
+    }
+  ]
+}

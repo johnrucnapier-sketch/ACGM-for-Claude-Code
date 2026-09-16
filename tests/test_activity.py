@@ -82,16 +82,18 @@ def shell_says_destructive(command: str) -> bool:
     With no fields present, a destructive command is denied and anything else
     passes silently, so the decision doubles as a classification.
     """
-    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
-    result = subprocess.run(
-        ["sh", str(HOOK)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
-        check=False,
-    )
-    return result.stdout.strip() != "{}"
+    with tempfile.TemporaryDirectory() as directory:
+        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+        result = subprocess.run(
+            ["sh", str(HOOK)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin", "CLAUDE_PROJECT_DIR": directory},
+            check=False,
+        )
+        return result.stdout.strip() != "{}"
+
 
 
 class FilterAgreement(unittest.TestCase):

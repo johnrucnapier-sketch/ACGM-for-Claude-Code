@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/grounding-inject.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/grounding-inject.sh\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pretool-destructive-bash.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/pretool-destructive-bash.sh\""
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-truth-first.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-truth-first.sh\""
           }
         ]
       }
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/sessionend-obligations.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/sessionend-obligations.sh\""
           }
         ]
       }

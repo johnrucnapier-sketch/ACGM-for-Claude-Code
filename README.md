@@ -846,3 +846,10 @@ updating the plugin so its hooks use the new version.
 中文：0.9.3 将未提交改动、待裁定草案改为只输出状态提示；只有待核验声明写入长期义务账本，
 同一会话、同一轮次、同一声明不重复追加。没有新义务时不修改文件。保留旧提醒、真实义务、
 草案和人的裁定，不自动提交或清空账本。工具调用计数仍是启发式检查，不代表已经核验成功。
+
+## v0.9.4
+
+Hardened evidence, remote context, policy anchoring and audit verification.
+See [release notes](docs/RELEASE-v0.9.4.md) and
+[security boundaries and compatibility](docs/SECURITY-v0.9.4.md).
+Publication does not automatically install or activate this version.

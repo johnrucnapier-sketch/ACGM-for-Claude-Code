@@ -61,6 +61,7 @@ FINGERPRINTS = [
     ("session_start_governed", "This project uses agent-coding-governance", "0.1"),
     ("session_start_ungoverned", "no governance docs were found", "0.1/0.4"),
     ("gate_blocked", "destructive operation blocked", "0.4.1+"),
+    ("gate_blocked", "ACGM gate — CONTEXT", "0.9.4"),
     ("gate_asked", "destructive operation held", "0.4.0"),
     ("gate_asked", "ACGM gate: this destructive Bash", "0.1"),
     ("posttool_advisory", "ACGM truth-first advisory", "0.4"),
@@ -218,7 +219,7 @@ def read_session(path: str) -> dict:
                     if (attachment.get("stdout") or "").strip() == "{}":
                         events["gate_allowed"] = events.get("gate_allowed", 0) + 1
 
-            stdout = attachment.get("stdout") or ""
+            stdout = (attachment.get("stdout") or "").replace(r"\u2014", "—")
             if not stdout:
                 continue
             for kind, needle, version in FINGERPRINTS:

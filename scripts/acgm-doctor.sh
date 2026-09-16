@@ -194,7 +194,7 @@ PY
       warn "cache matches source" "source is the install path — self-referential, nothing compared"
     else
       diff_count=0
-      for f in $(cd "$install_path" && find . -type f ! -path './.in_use/*' | sed 's|^\./||'); do
+      for f in $(cd "$install_path" && find . -type d \( -name __pycache__ -o -name .in_use \) -prune -o -type f ! -name '*.pyc' ! -name .in_use -print | sed 's|^\./||'); do
         [ -f "$src/$f" ] || { diff_count=$((diff_count+1)); continue; }
         a=$(shasum < "$install_path/$f" | cut -d' ' -f1)
         b=$(shasum < "$src/$f" | cut -d' ' -f1)

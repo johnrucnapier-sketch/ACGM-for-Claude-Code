@@ -54,18 +54,21 @@ def transcript(tmp: Path, assistant_text: str, tool_calls: list[tuple[str, str]]
             "message": {"role": "assistant", "content": [{"type": "text", "text": assistant_text}]},
         }
     ]
-    for name, command in tool_calls:
+    for index, (name, command) in enumerate(tool_calls):
         lines.append(
             {
                 "type": "assistant",
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "name": name, "input": {"command": command}}
+                        {"type": "tool_use", "id": f"call-{index}", "name": name, "input": {"command": command}}
                     ],
                 },
             }
         )
+        lines.append({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": f"call-{index}", "content": "synthetic success", "is_error": False}
+        ]}})
     path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
     return str(path)
 
@@ -93,7 +96,7 @@ class GateTests(unittest.TestCase):
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
-                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
+                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin", "CLAUDE_PROJECT_DIR": directory},
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -175,7 +178,7 @@ class GateTests(unittest.TestCase):
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
-                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
+                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin", "CLAUDE_PROJECT_DIR": directory},
                 check=False,
             )
         self.assertEqual(json.loads(result.stdout or "{}"), {})
@@ -266,7 +269,7 @@ class GateTests(unittest.TestCase):
         out = self.run_gate(
             'rm -rf "/tmp/acgm-scratch; and more"',
             FIELDS_SCRATCH,
-            calls=[("Bash", "ls /tmp/acgm-scratch")],
+            calls=[("Bash", "ls /tmp")],
         )
         self.assertPasses(out)
 
@@ -308,7 +311,7 @@ class GateTests(unittest.TestCase):
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
-                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin"},
+                env={"PATH": os.defpath + os.pathsep + "/opt/homebrew/bin:/usr/local/bin", "CLAUDE_PROJECT_DIR": directory},
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -453,7 +456,7 @@ class GateTests(unittest.TestCase):
 
     def test_an_unreadable_payload_fails_closed(self) -> None:
         """Unbalanced quotes mean the payload cannot be read. Gate it."""
-        self.assertAsks(self.run_gate("ssh rig 'bash /m/run.sh"), "FIELDS")
+        self.assertAsks(self.run_gate("ssh rig 'bash /m/run.sh"), "REMOTE-PARSE")
 
     def test_a_remote_delete_is_still_gated(self) -> None:
         """Already caught by substring before this change; keep it caught."""
@@ -483,7 +486,7 @@ class GateTests(unittest.TestCase):
             "ssh rig 'sudo sshd -T'",
         ):
             with self.subTest(command=command):
-                self.assertAsks(self.run_gate(command), "FIELDS")
+                self.assertAsks(self.run_gate(command), "REMOTE-PARSE" if "$f" in command else "FIELDS")
 
     def test_a_prefixed_inspection_is_recognised_as_read_only(self) -> None:
         for command in (
@@ -495,7 +498,7 @@ class GateTests(unittest.TestCase):
                 self.assertPasses(self.run_gate(command))
 
     def test_a_command_substitution_payload_is_not_assumed_read_only(self) -> None:
-        self.assertAsks(self.run_gate("ssh rig 'echo $(cat /etc/shadow)'"), "FIELDS")
+        self.assertAsks(self.run_gate("ssh rig 'echo $(cat /etc/shadow)'"), "REMOTE-PARSE")
 
     def test_nvidia_smi_reads_freely_but_setting_device_state_does_not(self) -> None:
         """`nvidia-smi` queries; `nvidia-smi -pl 300` rewrites a power limit."""

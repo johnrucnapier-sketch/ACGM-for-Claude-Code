@@ -31,6 +31,10 @@ CLAIM = """# C-20260806-01: the ledger carrier is the working tree
 
 def run_hook(cwd: Path, payload: dict | None = None) -> subprocess.CompletedProcess[str]:
     """Invoke the SessionEnd hook exactly as the harness would."""
+    if payload is None:
+        transcript = cwd / "empty-session.jsonl"
+        transcript.write_text("")
+        payload = {"transcript_path": str(transcript)}
     return subprocess.run(
         ["sh", str(HOOK)],
         cwd=str(cwd),
@@ -168,9 +172,9 @@ class LedgerTests(unittest.TestCase):
             obligations.write_text("# Manual obligation\nKeep this.\n")
             transcript = root / "session.jsonl"
             def write_transcript(check: str) -> None:
-                transcript.write_text(json.dumps({"message": {"content": [
-                    {"type": "text", "text": "ACGM-VERIFY-AFTER: " + check},
-                    {"type": "tool_use", "name": "Bash", "input": {"command": "true"}}
+                transcript.write_text(json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": "mutation", "name": "Bash", "input": {
+                        "command": "# ACGM-VERIFY-AFTER: " + check + "\nrm /synthetic/a"}}
                 ]}}) + "\n")
             write_transcript("check service")
             payload = {"transcript_path": str(transcript), "session_id": "session-one"}

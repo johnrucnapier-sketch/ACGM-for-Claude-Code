@@ -4,6 +4,29 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.9.4] — 2026-09-16
+
+### Security
+
+- Share SSH payload classification between routing and remote read-only evidence.
+- Fail closed without successful evidence; bind filesystem evidence to targets and hosts.
+- Enforce LOCAL / REMOTE protected-path guards and a stable project policy anchor.
+- Exclude failed/interrupted results; verify SessionEnd using real results, targets and ordering.
+- Tighten read-only classification and support validated journalctl / systemctl show queries.
+
+### Reliability / Audit
+
+- Count CONTEXT DENY as blocked activity, including JSON-escaped Hook output.
+- Ignore __pycache__, *.pyc and .in_use in doctor runtime-file comparisons.
+
+### Known limitations
+
+Opaque local wrappers, symlinks, executable trust and mutable remote context remain
+boundaries; conservative parsing may overblock read-only compound Bash. Codex
+integration and targeted simplification are deferred. This is not a full shell sandbox.
+
+See [release notes](docs/RELEASE-v0.9.4.md) for compatibility and validation scope.
+
 ## [0.9.2] — 2026-09-11
 
 ### Fixed
