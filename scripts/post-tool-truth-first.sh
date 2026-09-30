@@ -80,7 +80,10 @@ ADVISORY="ACGM truth-first advisory — the write to ${base} contains ${finding}
 This is a coarse heuristic and may be wrong; nothing has been changed. If the
 text states how the system currently behaves, re-read the source in this session
 and cite file:line. If it is a rule, a goal, or a quoted example, no citation is
-needed — add ACGM-REVIEWED to the document to stop this advisory recurring.
+needed. This heuristic sees only the newly written text and does not recognize
+all runtime-log or tool-result evidence. If relevant evidence already supports
+the claim, retain it and continue; do not add unrelated citations just to silence
+this non-blocking advisory. ACGM-REVIEWED remains an optional explicit opt-out.
 
 Never resolve this by weakening the claim into vaguer wording."
 

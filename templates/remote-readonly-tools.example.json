@@ -1,0 +1,11 @@
+{
+  "remote_path_guards": [],
+  "remote_readonly_tools": [
+    {
+      "host": "reviewed-host",
+      "path": "/opt/reviewed/health.sh",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "allowed_argv": [[], ["--json"]]
+    }
+  ]
+}

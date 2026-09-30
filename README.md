@@ -185,8 +185,9 @@ out, including the author — repeatedly, while building v0.4.
 
 *You'll know it worked when:* at the next session start the SessionStart hook
 injects a grounding directive — the agent acknowledges governance and runs the
-5-step grounding (or, if the project has no governance docs yet, points you to
-`governance-bootstrap`) instead of diving straight into edits.
+task-scoped grounding and continues within existing authorization. Startup separates
+root rules, ledger presence and valid runtime policy; missing layers do not trigger
+automatic bootstrap. See [workflow candidate](docs/WORKFLOW-v0.9.6.md).
 
 *And check it, don't assume it.* `claude plugin list` showing **enabled** is
 configuration, not activation — a plugin can be registered and still fail to load:
@@ -614,8 +615,8 @@ claude plugin install acgm@acgm
 会话**。这一点很坑人,作者本人在做 v0.4 的过程中反复栽在上面。
 
 *成功的样子:* 下次 session 启动时,SessionStart hook 会注入一段 grounding 指令——
-agent 会先确认治理、走 5 步 grounding(或在项目还没治理文档时,引导你调
-`governance-bootstrap`),而不是直接埋头改代码。
+agent 会核实任务相关现状并沿用已有授权继续。开场区分根规则、台账与运行策略，
+缺少某层不触发自动初始化。见[工作流候选说明](docs/WORKFLOW-v0.9.6.md)。
 
 *但要去查,不要假设。* `claude plugin list` 显示 **enabled** 是**配置**,不是**激活**
 ——插件可以注册成功却加载失败:
@@ -846,6 +847,16 @@ updating the plugin so its hooks use the new version.
 中文：0.9.3 将未提交改动、待裁定草案改为只输出状态提示；只有待核验声明写入长期义务账本，
 同一会话、同一轮次、同一声明不重复追加。没有新义务时不修改文件。保留旧提醒、真实义务、
 草案和人的裁定，不自动提交或清空账本。工具调用计数仍是启发式检查，不代表已经核验成功。
+
+## v0.9.6-rc.3
+
+Competition preparation patch: clearer diagnostics and bounded local observation
+logs, with unchanged Gate decisions relative to rc.2. Includes the previously
+local startup and exact trusted-tool improvements. See the
+[release, team installation and logging guide](docs/RELEASE-v0.9.6-rc.3.md).
+
+中文：赛前小补丁，改善诊断与模板路径，新增仅落本机的滚动日志，不改 rc.2 的放行规则。
+队友安装及更新方式见上述指南；更新后请开启新会话。
 
 ## v0.9.4
 

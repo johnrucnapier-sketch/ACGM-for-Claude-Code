@@ -599,14 +599,23 @@ class ToolCall:
     succeeded: bool = False
     started: int = -1
     finished: int = -1
+    result_text: str = ""
 
 
-def load_guards(path: str) -> list[tuple[str, str]]:
+def load_policy(path: str) -> tuple[list[tuple[str, str]], list[dict]]:
     """Explicit JSON config only; absence is optional, invalid presence is fatal."""
     import json
+    def unique_keys(pairs):
+        data = {}
+        for key, value in pairs:
+            if key in data:
+                raise ValueError("duplicate policy key")
+            data[key] = value
+        return data
     with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
-    if not isinstance(data, dict) or set(data) != {"remote_path_guards"}:
+        data = json.load(handle, object_pairs_hook=unique_keys)
+    if (not isinstance(data, dict) or "remote_path_guards" not in data
+            or set(data) - {"remote_path_guards", "remote_readonly_tools"}):
         raise ValueError("expected remote_path_guards configuration")
     guards = data["remote_path_guards"]
     if not isinstance(guards, list):
@@ -630,7 +639,98 @@ def load_guards(path: str) -> list[tuple[str, str]]:
                 if other_host != host and (under(normalized, other_prefix) or under(other_prefix, normalized)):
                     raise ValueError("overlapping prefixes have conflicting hosts")
             result.append((host, normalized))
-    return result
+    tools = data.get("remote_readonly_tools", [])
+    if not isinstance(tools, list):
+        raise ValueError("remote_readonly_tools must be a list")
+    identities = set()
+    for tool in tools:
+        if not isinstance(tool, dict) or set(tool) != {"host", "path", "sha256", "allowed_argv"}:
+            raise ValueError("readonly tool requires host, path, sha256 and allowed_argv")
+        host, path, digest, vectors = (tool[k] for k in ("host", "path", "sha256", "allowed_argv"))
+        if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", host):
+            raise ValueError("readonly tool host must be an exact SSH alias")
+        if (not isinstance(path, str) or not re.fullmatch(r"/[A-Za-z0-9_./-]+", path)
+                or path.startswith("//") or path != posixpath.normpath(path) or path.endswith("/")):
+            raise ValueError("readonly tool path must be a canonical absolute literal")
+        if payload_is_read_only(path):
+            raise ValueError("readonly tool path collides with built-in read-only classification")
+        if any(host != owner and under(path, prefix) for owner, prefix in result):
+            raise ValueError("readonly tool identity conflicts with protected-path host")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("readonly tool sha256 must be 64 lowercase hex digits")
+        if not isinstance(vectors, list) or not vectors:
+            raise ValueError("allowed_argv must be a nonempty list of exact vectors")
+        seen = set()
+        for argv in vectors:
+            if (not isinstance(argv, list) or any(not isinstance(a, str) or
+                    not re.fullmatch(r"[A-Za-z0-9_./:=+-]+", a) for a in argv)):
+                raise ValueError("argv must contain simple literal arguments")
+            if tuple(argv) in seen:
+                raise ValueError("duplicate argv vector")
+            seen.add(tuple(argv))
+        if (host, path) in identities:
+            raise ValueError("duplicate or conflicting readonly tool identity")
+        identities.add((host, path))
+    return result, tools
+
+
+def load_guards(path: str) -> list[tuple[str, str]]:
+    return load_policy(path)[0]
+
+
+def exact_remote_invocation(command: str) -> tuple[str, list[str]] | None:
+    """Qualification subset of the existing lexer/parser, not another parser.
+
+    Only ssh alias 'simple literal argv' is supported. No normalization of
+    executable identity, wrappers, SSH options, escapes, comments or operators.
+    """
+    outer = shell_words(command)
+    if (not outer or len(outer) != 3 or outer[0][0] != "ssh"
+            or command != "ssh " + outer[1][0] + " '" + outer[2][0] + "'"):
+        return None
+    remote = parse_remote(command)
+    if not remote or remote.kind != "ssh" or remote.error or remote.host != outer[1][0]:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_./:=+ -]+", remote.payload):
+        return None
+    words = shell_words(remote.payload)
+    if not words:
+        return None
+    return remote.host, [w for w, _ in words]
+
+
+def trusted_remote_status(command: str, tools: list[dict], calls: list[ToolCall], current_id: str = "") -> str:
+    """Same exact qualification; the status explains failure without granting trust."""
+    invocation = exact_remote_invocation(command)
+    if not invocation:
+        return "TRUSTED_INVOCATION_SHAPE"
+    host, argv = invocation
+    tool = next((t for t in tools if t["host"] == host and t["path"] == argv[0]
+                 and argv[1:] in t["allowed_argv"]), None)
+    if tool is None:
+        return "TRUSTED_IDENTITY_OR_ARGV"
+    prior = prior_calls(calls, command, current_id)
+    current = next((c for c in calls if current_id and c.call_id == current_id), None)
+    if not current_id and calls and calls[-1].name == "Bash" and calls[-1].command == command:
+        current = calls[-1]
+    # The latest exact measurement wins, even if failed or mismatched. Do not
+    # resurrect an older good hash after a newer observation invalidates it.
+    for call in reversed(prior):
+        if call.name != "Bash" or exact_remote_invocation(call.command) != (host, ["sha256sum", tool["path"]]):
+            continue
+        if not call.succeeded or not call.finished > call.started >= 0:
+            return "TRUSTED_EVIDENCE_FAILED_OR_PENDING"
+        if current is not None and call.finished >= current.started:
+            return "TRUSTED_EVIDENCE_ORDER"
+        if call.result_text not in (tool["sha256"] + "  " + tool["path"],
+                                    tool["sha256"] + "  " + tool["path"] + "\n"):
+            return "TRUSTED_HASH_OR_OUTPUT_MISMATCH"
+        return "TRUSTED_READONLY"
+    return "TRUSTED_EVIDENCE_MISSING"
+
+
+def trusted_remote_readonly(command: str, tools: list[dict], calls: list[ToolCall], current_id: str = "") -> bool:
+    return trusted_remote_status(command, tools, calls, current_id) == "TRUSTED_READONLY"
 
 
 def under(path: str, prefix: str) -> bool:
@@ -804,14 +904,18 @@ def evidence_targets(command: str) -> set[tuple[str, str]]:
     return targets
 
 
-def has_prior_evidence(calls: list[ToolCall], gated_command: str = "", current_id: str = "") -> bool:
+def prior_calls(calls: list[ToolCall], gated_command: str = "", current_id: str = "") -> list[ToolCall]:
     # Remove the current call BEFORE applying the fixed 12-call window. Only
     # tool calls count; prose/results/hook helper processes do not consume it.
     prior = calls
     if prior and ((current_id and prior[-1].call_id == current_id) or
                   (not current_id and prior[-1].name == "Bash" and prior[-1].command == gated_command)):
         prior = prior[:-1]
-    prior = prior[-EVIDENCE_WINDOW:]
+    return prior[-EVIDENCE_WINDOW:]
+
+
+def has_prior_evidence(calls: list[ToolCall], gated_command: str = "", current_id: str = "") -> bool:
+    prior = prior_calls(calls, gated_command, current_id)
     targets = operation_targets(gated_command)
     observed = set()
     any_read = False

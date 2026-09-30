@@ -11,14 +11,16 @@
 #
 # Exit 0 when nothing is broken, 1 when a check fails. Warnings do not fail.
 #
-# Usage:  sh scripts/acgm-doctor.sh [--plugin-dir <path>]
+# Usage:  sh scripts/acgm-doctor.sh [--plugin-dir <path>] [--project <path>]
 
 set -eu
 
 PLUGIN_DIR=""
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --plugin-dir) PLUGIN_DIR="${2:-}"; shift 2 ;;
+    --project) PROJECT_DIR="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) shift ;;
   esac
@@ -38,6 +40,16 @@ warn() { printf '  \033[33mWARN\033[0m  %-34s %s\n' "$1" "$2"; warns=$((warns+1)
 note() { printf '  ----  %-34s %s\n' "$1" "$2"; }
 
 printf '\nACGM doctor — %s\n\n' "$PLUGIN_DIR"
+
+# Reuse the Gate's stable project boundary and the startup state reader. This
+# validates configuration, not activation, and never creates governance files.
+if [ -n "$PROJECT_DIR" ]; then
+  if state=$(PYTHONDONTWRITEBYTECODE=1 python3 "$PLUGIN_DIR/scripts/acgm_status.py" --project "$PROJECT_DIR"); then
+    note "project state (configuration)" "$state"
+  else
+    bad "project state (configuration)" "$state"
+  fi
+fi
 
 # --- 1. manifest shape ------------------------------------------------------
 # Proves: the manifest would be accepted by Claude Code's loader.

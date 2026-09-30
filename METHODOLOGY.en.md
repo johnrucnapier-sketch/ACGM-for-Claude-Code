@@ -294,19 +294,18 @@ Every session (new / resumed / picking up a half-done task) must run, before sta
 1. **Read the constitution + the root rules file** (mandatory, no skim-reading)
 2. **Determine which track/scope this session falls in** (see Principle Six), and
    additionally read that layer's docs
-3. **Report 5 things, then wait for the human to confirm before acting**:
+3. **Briefly report task-relevant facts and continue within existing authorization; ask only if target, scope, permission or material risk is unresolved**:
    - which track I'm in
    - the current state shown by `git log` + `git status`
    - the relevant structure I saw from actually reading the code (not from impression)
    - the list of files I intend to change (concrete paths)
    - the execution steps I intend to take
 4. After changes, run the verification scripts
-5. Closing report + commit draft, wait for human approval before committing
+5. Close with a report; commit, installation and push follow their existing user authorization without a duplicate ritual approval
 
 Make this into a **generic startup phrase**, solidified into a file. Paste it as the
 first line of any session, append the concrete task at the end. This way you don't
-re-explain the rules every time; a new session auto-joins governance. **This step cuts
-more than half of handoff cost.**
+re-explain the rules every time; a new session auto-joins governance. Keep the governance summary short; measure any handoff cost improvement in task tests.
 
 > Key: **restate first, then act.** The deviation exposed at the restate stage is an
 > order of magnitude cheaper than the one found after the code is written.
@@ -315,9 +314,9 @@ more than half of handoff cost.**
 
 > **Advisory clause · single direct event of support** — same 2-independent-evidence rule.
 
-The 5-step grounding ritual is not just for session start; **before every
-destructive / state-changing operation** it must also run, at minimum steps 1–3 of
-the five:
+**Before every destructive / state-changing operation**, check the relevant rules,
+location, authorization and dynamic state. Do not repeat the whole startup report
+or request approval already given:
 
 1. **Read the relevant governance rules:** the red lines for this class of
    operation (e.g., truth-first's operational-truth corollary, this repo's scope

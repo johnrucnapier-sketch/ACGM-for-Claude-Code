@@ -4,6 +4,42 @@ Plugin id: `acgm@acgm` since 0.6.0. Versions up to 0.5.1 shipped as
 `agent-coding-governance-methodology@agent-coding-governance-methodology`; that
 line is left as written rather than rewritten to match the present.
 
+## [0.9.6-rc.3] — 2026-09-30
+
+Competition preparation patch; includes the previously local rc.1/rc.2 work.
+
+- Clarify unsupported outer SSH operators, wholly read-only evidence calls,
+  compound-operation repair order and exact trusted script qualification.
+- Fix ledger template discovery; explain the non-blocking citation heuristic's
+  limits without changing detection or requiring unrelated citations.
+- Add bounded local, private Hook observations with HMAC correlation IDs,
+  reason codes and tool outcomes; no commands, outputs, credentials or uploads.
+  Logging failure does not change the Gate result; inspections are excluded.
+- Keep rc.2 permission decisions, evidence window and policy matching unchanged.
+
+See [release and logging guide](docs/RELEASE-v0.9.6-rc.3.md).
+
+## [0.9.6-rc.2] — 2026-09-28
+
+- Keep explicit SSH user, key and port choices out of canonical repair hints;
+  diagnostics never suggest dropping transport identity options to gain trust.
+- Supersedes the locally verified rc.1 before user behavioral acceptance.
+
+## [0.9.6-rc.1] — 2026-09-28
+
+Local workflow candidate, stage 1. Publication and behavioral acceptance pending.
+
+- Include the existing v0.9.5-rc.1 exact hash-pinned remote read-only qualification.
+- Share stable project discovery between Gate and SessionStart/project doctor;
+  distinguish root rules, ledger presence, valid policy and unproven activation.
+- Reuse existing authorization during scoped grounding; remove automatic full
+  doctor audits and duplicate opening approval from the startup workflow.
+- Explain Gate denials with reason codes and next actions, including unsupported
+  targets and exact trusted-tool evidence. Keep fail-closed decisions and the
+  12-call evidence window; no permission grants or remote execution in diagnostics.
+- Add a read-only inspector that invokes the real Hook chain. Its pass-through
+  verdict does not certify safety, runtime state or permission.
+
 ## [0.9.4] — 2026-09-16
 
 ### Security

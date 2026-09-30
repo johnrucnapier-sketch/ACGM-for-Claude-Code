@@ -34,7 +34,8 @@ import sys
 from acgm_policy import (
     EVIDENCE_WINDOW, SUBSTITUTION, split_command, operative_segments,
     missing_fields, fields_name_this_target, target_tokens, remote_needs_gate,
-    has_prior_evidence, execution_problems, load_guards, ToolCall,
+    has_prior_evidence, execution_problems, load_guards, load_policy, ToolCall, trusted_remote_readonly,
+    trusted_remote_status, parse_remote, command_words, shell_words, WRITE_VERBS,
     bash_is_read_only, evidence_targets, operation_targets, literal_path, FIELD_COMMENT,
 )
 
@@ -55,6 +56,32 @@ def emit(decision: str | None, reason: str = "") -> None:
             )
         )
     sys.exit(0)
+
+
+def issue(code: str, message: str, next_action: str, retryable: bool = False, **details) -> dict:
+    return {"code": code, "message": message, "retryable": retryable,
+            "next_safe_action": next_action, **details}
+
+
+def deny(issues: list[dict]) -> None:
+    # Keep Claude's supported Hook output schema. The bounded JSON diagnostic is
+    # inside its reason string so both the model and the inspector see one result.
+    emit("deny", "ACGM gate — destructive operation blocked.\n"
+         + "\n".join(f"{i['code']}: {i['message']} Next: {i['next_safe_action']}" for i in issues)
+         + "\nEvidence is not authorization; do not bypass a denial.\nACGM-DIAGNOSTIC: "
+         + json.dumps({"schema_version": 1, "issues": issues}, ensure_ascii=False))
+
+
+def context_issues(problems: list[str]) -> list[dict]:
+    result = []
+    for problem in problems:
+        action = "Check the actual host, literal target and supported transport. Fields cannot waive this denial."
+        if 'unsupported outer SSH shell operator' in problem:
+            action = ("An outer pipe/redirection or compound shell operator is unsupported here. "
+                      "Separate the remote inspection from local output processing; preserve the host, user, key and port. "
+                      "Do not move a write into another wrapper to bypass the Gate.")
+        result.append(issue(problem.split(" — ", 1)[0], problem, action))
+    return result
 
 
 def last_assistant_text(path: str) -> str:
@@ -140,7 +167,11 @@ def recent_tool_uses(path: str, limit: int | None, strict: bool = False) -> list
                                 failed |= exit_code != 0
                             if call_id in results:
                                 raise ValueError("duplicate result")
-                            results[call_id] = (not failed, position)
+                            content = block.get("content", "")
+                            if isinstance(content, list) and all(isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str) for b in content):
+                                content = "".join(b["text"] for b in content)
+                            text = content if isinstance(content, str) and len(content) <= 4096 else ""
+                            results[call_id] = (not failed, position, text)
     except (OSError, ValueError, UnicodeError, TypeError):
         if strict:
             raise ValueError("unreadable or invalid transcript")
@@ -148,16 +179,36 @@ def recent_tool_uses(path: str, limit: int | None, strict: bool = False) -> list
     selected = calls if limit is None else calls[-(limit + 1):]
     return [ToolCall(c.name, c.command, c.path, c.call_id,
                      results.get(c.call_id, (False, -1))[0], c.started,
-                     results.get(c.call_id, (False, -1))[1]) for c in selected]
+                     results.get(c.call_id, (False, -1))[1],
+                     results.get(c.call_id, (False, -1, ""))[2]) for c in selected]
 
 
-def configured_guards(payload: dict) -> list[tuple[str, str]]:
+def configured_policy_path(payload: dict) -> str | None:
     # Never anchor to payload.cwd: Claude updates it after a shell cd.
     path = os.environ.get("ACGM_POLICY_CONFIG")
     if path is not None:
         if not os.path.isabs(path):
             raise ValueError("ACGM_POLICY_CONFIG must be absolute")
-        return load_guards(path)
+        return path
+    anchor = project_anchor()
+    governance = os.path.join(anchor, ".governance")
+    try:
+        os.lstat(governance)
+    except FileNotFoundError:
+        return None  # ordinary project with no governance configuration
+    if os.path.islink(governance):
+        raise ValueError("project governance symlink requires explicit policy")
+    # Listing distinguishes absent optional config from inaccessible governance.
+    if "remote-path-guards.json" not in os.listdir(governance):
+        return None
+    path = os.path.join(governance, "remote-path-guards.json")
+    if os.path.islink(path):
+        raise ValueError("project policy symlink requires explicit policy")
+    return path
+
+
+def project_anchor() -> str:
+    """Stable startup root, shared by Gate, SessionStart and project doctor."""
     anchor = os.environ.get("CLAUDE_PROJECT_DIR", "")
     if not os.path.isabs(anchor) or not os.path.isdir(anchor):
         raise ValueError("stable project anchor unavailable; set ACGM_POLICY_CONFIG")
@@ -176,29 +227,38 @@ def configured_guards(payload: dict) -> list[tuple[str, str]]:
         anchor = root
     elif "not a git repository" not in result.stderr:
         raise ValueError("project boundary resolution failed")
-    governance = os.path.join(anchor, ".governance")
-    try:
-        os.lstat(governance)
-    except FileNotFoundError:
-        return []  # ordinary project with no governance configuration
-    if os.path.islink(governance):
-        raise ValueError("project governance symlink requires explicit policy")
-    # Listing distinguishes absent optional config from inaccessible governance.
-    if "remote-path-guards.json" not in os.listdir(governance):
-        return []
-    path = os.path.join(governance, "remote-path-guards.json")
-    if os.path.islink(path):
-        raise ValueError("project policy symlink requires explicit policy")
-    return load_guards(path)
+    return anchor
+
+
+def configured_guards(payload: dict) -> list[tuple[str, str]]:
+    path = configured_policy_path(payload)
+    return load_guards(path) if path else []
+
+
+def configured_policy(payload: dict) -> tuple[list[tuple[str, str]], list[dict]]:
+    path = configured_policy_path(payload)
+    return load_policy(path) if path else ([], [])
+
+
+def trusted_call(payload: dict, command: str, tools: list[dict]) -> bool:
+    if not tools:
+        return False
+    transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    calls = recent_tool_uses(transcript, EVIDENCE_WINDOW) if transcript else []
+    return trusted_remote_readonly(command, tools, calls, payload.get("tool_use_id", ""))
 
 
 def preflight() -> None:
     payload = json.load(sys.stdin)
     command = payload["tool_input"]["command"]
     _, operation = split_command(command)
-    problems = execution_problems(operation, configured_guards(payload), payload.get("cwd") or os.getcwd())
+    guards, tools = configured_policy(payload)
+    problems = execution_problems(operation, guards, payload.get("cwd") or os.getcwd())
     if problems:
-        emit("deny", "ACGM gate — " + "\n".join(problems))
+        deny(context_issues(problems))
+    if trusted_call(payload, command, tools):
+        print(json.dumps({"trusted_readonly": True, "needs_gate": False}))
+        return
     from acgm_policy import command_words, split_segments
     ordinary_delete = any((w := command_words(s)) and w[0][0] == "rm" for s in split_segments(operation))
     print(json.dumps({"needs_gate": remote_needs_gate(operation) or ordinary_delete}))
@@ -432,86 +492,109 @@ def session_end() -> None:
     sys.exit(0)
 
 
+def trusted_hint(command: str, tools: list[dict], calls: list[ToolCall], current_id: str) -> list[dict]:
+    # Suggest exact registered read-only forms only for the same host/path/argv.
+    # Never suggest changing host, trust registry or arguments to get a pass.
+    _, operation = split_command(command)
+    remote = parse_remote(operation)
+    if not remote or remote.error or remote.kind != "ssh":
+        return []
+    outer = shell_words(operation)
+    if not outer or len(outer) != 3 or outer[0][0] != 'ssh' or outer[1][0] != remote.host:
+        # The parser normalizes user@host and supported transport options. A
+        # diagnostic must not turn that into advice to drop a user/key/port.
+        return []
+    words = shell_words(remote.payload)
+    if not words:
+        return []
+    argv = [w for w, _ in words]
+    entry = next((t for t in tools if t["host"] == remote.host and t["path"] == argv[0]), None)
+    if entry is None:
+        return []
+    if argv[1:] not in entry["allowed_argv"]:
+        return [issue("TRUSTED_ARGV_UNREGISTERED", "This argument vector is not registered as read-only.",
+                      "Review the requested operation; do not change arguments or register new trust just to pass.")]
+    code = trusted_remote_status(command, tools, calls, current_id)
+    if code == "TRUSTED_READONLY":
+        return []
+    canonical = "ssh " + entry["host"] + " '" + " ".join(argv) + "'"
+    expected = "ssh " + entry["host"] + " 'sha256sum " + entry["path"] + "'"
+    retryable = code in ("TRUSTED_INVOCATION_SHAPE", "TRUSTED_EVIDENCE_MISSING")
+    action = ("Use the exact standalone registered invocation and a separate single-file remote hash read."
+              if retryable else "Inspect the failed, unordered or mismatched measurement. Do not update trust to silence it.")
+    return [issue(code, "Exact registered read-only qualification was not established.", action, retryable,
+                  canonical_invocation=canonical, expected_evidence_command=expected,
+                  evidence_window=EVIDENCE_WINDOW)]
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except (ValueError, OSError):
-        emit("deny", "ACGM gate — unreadable hook input")
+        deny([issue("INPUT_INVALID", "Unreadable hook input.", "Provide a valid Bash hook payload.")])
 
     command = (payload.get("tool_input") or {}).get("command", "")
     transcript = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    current_id = payload.get("tool_use_id", "")
     field_block, operation = split_command(command)
-
-    problems: list[str] = execution_problems(operation, configured_guards(payload), payload.get("cwd") or os.getcwd())
+    guards, tools = configured_policy(payload)
+    problems = execution_problems(operation, guards, payload.get("cwd") or os.getcwd())
+    if problems:
+        deny(context_issues(problems))
+    if trusted_call(payload, command, tools):
+        emit(None)
 
     segments = operative_segments(operation)
+    issues = []
     if len(segments) > 1:
-        problems.append(
-            "STANDALONE — this invocation runs %d operations in one call:\n    %s\n"
-            "    Split them. Source inspection, the state change, and verification\n"
-            "    must be separate tool calls, or ordering and partial failure stop\n"
-            "    being auditable." % (len(segments), "\n    ".join(segments[:4]))
-        )
+        issues.append(issue("STANDALONE", "Multiple operative segments in one gated call.",
+                            "First separate source inspection, state change and verification into tool calls; then gather evidence and write fields for each resulting operation's own targets.", True))
     if segments and SUBSTITUTION.search(segments[0]):
-        problems.append(
-            "STANDALONE — the target is computed by command substitution, so it\n"
-            "    cannot be read from the command text. Resolve it in its own\n"
-            "    read-only call first, then pass the literal value."
-        )
+        issues.append(issue("STANDALONE", "The target is computed by command substitution.",
+                            "Resolve the target in a read-only call, then use its literal value.", True))
 
     absent = missing_fields(field_block)
     if absent:
-        problems.append(
-            "FIELDS — missing or placeholder: %s\n"
-            "    Put them in the command itself, as comment lines above the\n"
-            "    operation. Each needs real content, not a template." % ", ".join(absent)
-        )
+        issues.append(issue("FIELDS", "Missing or placeholder command-comment fields.",
+                            "Add the listed fields with current evidence, state, post-check and recovery details. A script argument named status does not establish read-only trust; only the exact registered tool invocation with matching hash evidence qualifies.",
+                            True, missing_fields=absent))
     elif not fields_name_this_target(field_block, operation):
-        problems.append(
-            "BINDING — the fields do not name anything this command acts on:\n"
-            "    %s\n"
-            "    Fields copied from a previous operation would otherwise license\n"
-            "    this one. Name the actual target."
-            % ", ".join(sorted(set(target_tokens(operation)))[:6])
-        )
+        issues.append(issue("BINDING", "The command-comment fields do not name this operation's target.",
+                            "Describe the actual target; do not reuse another operation's fields.", True,
+                            targets=sorted(set(target_tokens(operation)))[:6]))
 
-    calls = recent_tool_uses(transcript, EVIDENCE_WINDOW) if transcript else []
-    if not has_prior_evidence(calls, command, payload.get("tool_use_id", "")):
-        problems.append(
-            "EVIDENCE — no successful target-bound read-only tool evidence in the last "
-            f"{EVIDENCE_WINDOW} prior calls. Read the target or its direct parent on "
-            "the same host first. Missing, empty or unreadable transcript is not evidence."
-        )
-
-    if not problems:
-        # Complete gate: hand back to the harness's normal permission flow, where
-        # the human decides. Never "allow" -- evidence is not authorization.
-        emit(None)
-
-    # "deny", not "ask". Observed 2026-08-05: this gate returned "ask" against a
-    # real destructive command, the transcript shows the hook fired, and the
-    # command ran anyway -- the session's permission mode auto-approved it. An
-    # "ask" is a request routed through the permission mode; where that mode
-    # auto-accepts, it is a no-op. An incomplete gate must not depend on the
-    # operator's current mode to hold.
-    #
-    # Denying does not remove human authority, it relocates it: the block is
-    # lifted by producing the evidence, and the completed gate then goes to the
-    # human through the normal flow.
-    emit(
-        "deny",
-        "ACGM gate — destructive operation blocked.\n\n"
-        + "\n\n".join(f"  {index}. {problem}" for index, problem in enumerate(problems, 1))
-        + "\n\nRetry with the four fields as comment lines in the command itself:\n\n"
-        "    # ACGM-EVIDENCE: primary source establishing each target identifier\n"
-        "    # ACGM-CURRENT-STATE: the target's state, read in this session\n"
-        "    # ACGM-VERIFY-AFTER: the post-action check and its success signal\n"
-        "    # ACGM-ROLLBACK: recovery if the target or the result is wrong\n"
-        "    <the operation, on its own line>\n\n"
-        "Fields and successful target-bound tool evidence are both required.\n"
-        "Neither can waive an execution-context or parsing denial. A complete\n"
-        "gate still returns to the harness permission flow; it never authorizes.",
-    )
+    transcript_invalid = False
+    try:
+        calls = recent_tool_uses(transcript, EVIDENCE_WINDOW, strict=True) if transcript else []
+    except ValueError:
+        calls = []
+        transcript_invalid = True
+    if not has_prior_evidence(calls, command, current_id):
+        targets = operation_targets(operation)
+        unsupported = not targets and any(parse_remote(s) or
+                         ((w := command_words(s)) and w[0][0] in WRITE_VERBS) for s in segments)
+        if unsupported:
+            # Four fields and unrelated reads cannot make this target supported.
+            for item in issues:
+                if item['code'] in ('FIELDS', 'BINDING'):
+                    item['retryable'] = False
+                    item['next_safe_action'] = "Resolve the unsupported resource first; fields alone cannot make this call pass."
+            issues.append(issue("EVIDENCE_TARGET_UNSUPPORTED", "No supported filesystem target can bind this operation.",
+                                "This version cannot verify this resource. Stop format retries; use a separately reviewed procedure or report the limitation."))
+        else:
+            code = "EVIDENCE_TRANSCRIPT_INVALID" if transcript_invalid else "EVIDENCE"
+            issues.append(issue(code, "No successful target-bound read-only evidence in the last 12 prior calls.",
+                                "Use the active session transcript and read each literal target or its direct parent on the same host. The entire evidence call must be read-only: do not combine ls with compilation, file creation or other mutations. Failed, pending or out-of-window reads do not count; a written explanation is not a tool result.",
+                                not transcript_invalid,
+                                targets=[{"host": h or "local", "path": p} for h, p in sorted(targets)]))
+    if not issues:
+        emit(None)  # Pass through to Claude's permission flow; never allow.
+    hints = trusted_hint(command, tools, calls, current_id)
+    if hints:
+        # Missing trusted evidence has a direct read-only repair path. Suppress
+        # irrelevant ordinary gate instructions without changing the verdict.
+        issues = [i for i in issues if i['code'] not in ('FIELDS', 'BINDING', 'EVIDENCE')]
+    deny(hints + issues)
 
 
 if __name__ == "__main__":
@@ -532,4 +615,5 @@ if __name__ == "__main__":
             sys.stderr.write("ACGM — UNVERIFIED: SessionEnd policy failure\n")
             sys.exit(0)
         # Never expose paths/config contents or turn a policy failure into allow.
-        emit("deny", "ACGM gate — policy/configuration failure; inspect the local configuration and hook installation")
+        deny([issue("POLICY_OR_RUNTIME_INVALID", "Policy configuration, anchor or runtime validation failed.",
+                    "Check the project policy and runtime dependencies; fields cannot waive this denial.")])

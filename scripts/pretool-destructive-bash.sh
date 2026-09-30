@@ -31,10 +31,20 @@
 
 set -eu
 
+emit_result() {
+  # The final verdict is already computed. Observation failures cannot alter it.
+  if [ "${ACGM_OBSERVATIONS:-1}" != 0 ]; then
+    { printf '%s\n' "$input"; printf '%s\n' "$1"; } |
+      PYTHONDONTWRITEBYTECODE=1 python3 "$(dirname "$0")/acgm_observe.py" gate 2>/dev/null || true
+  fi
+  printf '%s\n' "$1"
+}
+
 deny_runtime() {
-  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"ACGM gate unavailable or invalid input; restore the local hook before retrying"}}'
+  emit_result '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"ACGM gate unavailable or invalid input; restore the local hook before retrying"}}'
   exit 0
 }
+input=""
 input=$(cat 2>/dev/null) || deny_runtime
 [ -n "$input" ] || deny_runtime
 command -v jq >/dev/null 2>&1 || deny_runtime
@@ -52,7 +62,13 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null ||
 preflight=$(printf '%s' "$input" | ACGM_HOOK_MODE=preflight python3 "$(dirname "$0")/acgm_gate.py") || deny_runtime
 printf '%s' "$preflight" | jq -e 'type == "object"' >/dev/null 2>&1 || deny_runtime
 if printf '%s' "$preflight" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null; then
-  printf '%s\n' "$preflight"
+  emit_result "$preflight"
+  exit 0
+fi
+
+# Exact full-command qualification runs only after all execution-context checks.
+if printf '%s' "$preflight" | jq -e '.trusted_readonly == true' >/dev/null; then
+  emit_result '{}'
   exit 0
 fi
 
@@ -137,9 +153,9 @@ if printf '%s' "$preflight" | jq -e '.needs_gate == true' >/dev/null; then
   is_destructive=1
 fi
 
-[ "$is_destructive" = 1 ] || { echo '{}'; exit 0; }
+[ "$is_destructive" = 1 ] || { emit_result '{}'; exit 0; }
 
 # ---- Structural gate (python3; only reached for destructive commands) ----
 result=$(printf '%s' "$input" | ACGM_HOOK_MODE=gate python3 "$(dirname "$0")/acgm_gate.py") || deny_runtime
 printf '%s' "$result" | jq -e 'type == "object"' >/dev/null 2>&1 || deny_runtime
-printf '%s\n' "$result"
+emit_result "$result"

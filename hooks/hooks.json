@@ -31,6 +31,16 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-truth-first.sh\""
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/observe-event.sh\"",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -39,6 +49,27 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/sessionend-obligations.sh\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/observe-event.sh\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/observe-event.sh\"",
+            "timeout": 3
           }
         ]
       }

@@ -129,7 +129,10 @@ recorded and traceable** — not that it is impossible.
 collide. `decisions/` is governance output, so by Principle Seven it is authored
 **on the trunk only** — which also removes any `ADR-NNNN` numbering collision.
 
-Use `templates/CLAIM._TEMPLATE.md` and `templates/ADR._TEMPLATE.md`.
+Use the installed plugin root's `templates/CLAIM._TEMPLATE.md` and
+`templates/ADR._TEMPLATE.md` (two levels above this skill directory, not inside it).
+For a shell command, use `${CLAUDE_PLUGIN_ROOT}/templates/...` only when that
+variable is present; otherwise resolve the actual installed plugin root first.
 
 Writing a file into `.governance/` does not put it in the repository. Do **not**
 commit on your own — Principle Six reserves that for the human. SessionEnd
@@ -252,7 +255,9 @@ SessionEnd 报。超过五次是这个 skill 的设计气味,不是可以调高�
 `claims/` 任何工作树都可以写,编号按日期,不会冲突。`decisions/` 是治理产物,按第七
 原则**只在主干 author**——这也顺带消掉了 `ADR-NNNN` 的编号冲突问题。
 
-使用 `templates/CLAIM._TEMPLATE.md` 和 `templates/ADR._TEMPLATE.md`。
+使用已安装插件根目录下的 `templates/CLAIM._TEMPLATE.md` 和 `templates/ADR._TEMPLATE.md`：
+插件根在当前 skill 目录向上两级，模板不在 skill 目录内。Shell 中仅在变量存在时使用
+`${CLAUDE_PLUGIN_ROOT}/templates/...`，否则先确认实际插件根目录。
 
 **把文件写进 `.governance/` 不等于它进了版本库。** 不要自行提交——第六原则把提交留给
 人。SessionEnd 会把未提交的账本改动记成一条未了义务。

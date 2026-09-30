@@ -83,14 +83,14 @@ apply to every session. Read and follow them before doing anything.
    完整读 `CONSTITUTION.md` + 根规则,不跳读。
 2. Identify which track / scope this session is in; load that layer's docs. /
    判断本次落在哪个轨道/范围,加读对应层文档。
-3. Report these 5, then WAIT for human confirmation before acting: which track;
+3. Briefly report these task-relevant facts and continue within existing authorization: which track;
    `git log` + `git status`; structure seen by actually reading code (not memory);
    exact file list you will change; the steps you will take. /
-   报告这 5 项后等人确认再动手:落在哪个轨道;`git log`+`git status`;实际读代码
-   看到的结构(不凭印象);要改的文件清单;打算的执行步骤。
+   简要报告相关事实并沿用已有授权继续:落在哪个轨道;`git log`+`git status`;实际读代码
+   看到的结构(不凭印象);要改的文件清单;打算的执行步骤。目标、范围、权限或实质风险未明时才询问。
 4. After changes, run the verification scripts. / 改完跑验证脚本。
-5. Closing report + commit draft — wait for human approval before committing. /
-   收尾报告 + commit 草稿,等人审批再 commit。
+5. Close with a report; commit/install/push follow their actual user authorization. /
+   收尾报告；commit、安装、推送各自遵守真实用户授权，不为仪式重复确认。
 
 ## Before any technical conclusion or irreversible action / 写结论或不可逆操作前:truth-first
 
